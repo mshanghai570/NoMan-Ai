@@ -34,6 +34,12 @@ export const DEFAULT_SETTINGS: UserSettings = {
   webGpuAcceleration: true,
   hapticFeedback: true,
   theme: 'oled',
+  fontFamily: 'Plus Jakarta Sans',
+  fontHeading: 'Plus Jakarta Sans',
+  fontMono: 'JetBrains Mono',
+  fontSizeScale: 'normal',
+  customThemes: [],
+  themeApiKey: '',
   autoSave: true,
   defaultAspectRatio: '1:1',
   defaultSteps: 28,
@@ -174,9 +180,9 @@ export const saveStoredSettings = (settings: UserSettings): void => {
 export const getStoredGenerations = (): GenerationItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.GENERATIONS);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -191,6 +197,27 @@ export const saveStoredGenerations = (items: GenerationItem[]): void => {
     localStorage.setItem(STORAGE_KEYS.GENERATIONS, JSON.stringify(items));
   } catch (e) {
     console.error('Failed to save generations', e);
+  }
+};
+
+export const deleteStoredGenerations = (idsToDelete: string[]): GenerationItem[] => {
+  try {
+    const current = getStoredGenerations();
+    const toDeleteSet = new Set(idsToDelete);
+    const updated = current.filter((item) => !toDeleteSet.has(item.id));
+    saveStoredGenerations(updated);
+    return updated;
+  } catch (e) {
+    console.error('Failed to batch delete generations', e);
+    return getStoredGenerations();
+  }
+};
+
+export const clearStoredGenerations = (): void => {
+  try {
+    saveStoredGenerations([]);
+  } catch (e) {
+    console.error('Failed to clear generations', e);
   }
 };
 

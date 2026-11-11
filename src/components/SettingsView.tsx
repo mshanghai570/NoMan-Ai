@@ -23,15 +23,21 @@ import {
 import { haptic } from '../utils/haptics';
 import { AgeGateModal } from './AgeGateModal';
 import { clearStoredPersonaNsfwOverrides } from '../services/storage';
+import { BUILTIN_THEMES } from '../constants/themes';
+import { CURATED_FONTS } from '../constants/fonts';
+import { loadGoogleFont } from '../utils/themeManager';
+import type { FontSizeScale } from '../types';
 
 interface SettingsViewProps {
   settings: UserSettings;
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
+  onOpenThemeStudio?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onUpdateSettings,
+  onOpenThemeStudio,
 }) => {
   const [hfToken, setHfToken] = useState(settings.hfToken || '');
   const [tokenSaved, setTokenSaved] = useState(false);
@@ -703,11 +709,179 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 3. iOS Appearance & Tactile Haptics */}
+      {/* 3. Typography & Gemini AI Theme Studio */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Palette className="w-4 h-4 text-cyan-400" />
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Typography & Studio Theme</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60">
+                  Gemini AI
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Customize fonts, scaling, and generate any aesthetic theme using Gemini AI
+              </p>
+            </div>
+          </div>
+
+          {onOpenThemeStudio && (
+            <button
+              onClick={() => {
+                haptic.trigger('selection');
+                onOpenThemeStudio();
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-cyan-500/20 active:scale-95 transition-all self-start sm:self-auto"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Theme Studio & Gemini Alchemist</span>
+            </button>
+          )}
+        </div>
+
+        {/* Font Family Selection */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+              Primary Body Font
+            </label>
+            <select
+              value={settings.fontFamily || 'Plus Jakarta Sans'}
+              onChange={(e) => {
+                haptic.trigger('selection');
+                loadGoogleFont(e.target.value);
+                onUpdateSettings({ fontFamily: e.target.value });
+              }}
+              className="w-full bg-slate-950 text-slate-200 text-xs rounded-xl px-3 py-2.5 border border-slate-800 focus:border-cyan-400 focus:outline-none"
+            >
+              {CURATED_FONTS.map((f) => (
+                <option key={f.family} value={f.family}>
+                  {f.label} ({f.category})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+              Heading Display Font
+            </label>
+            <select
+              value={settings.fontHeading || settings.fontFamily || 'Plus Jakarta Sans'}
+              onChange={(e) => {
+                haptic.trigger('selection');
+                loadGoogleFont(e.target.value);
+                onUpdateSettings({ fontHeading: e.target.value });
+              }}
+              className="w-full bg-slate-950 text-slate-200 text-xs rounded-xl px-3 py-2.5 border border-slate-800 focus:border-cyan-400 focus:outline-none"
+            >
+              {CURATED_FONTS.map((f) => (
+                <option key={f.family} value={f.family}>
+                  {f.label} ({f.category})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Font Scale Buttons */}
+        <div>
+          <label className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+            <span>Font Size Scale</span>
+            <span className="font-mono text-cyan-400">
+              {settings.fontSizeScale === 'compact' ? 'Compact 93%' : settings.fontSizeScale === 'relaxed' ? 'Relaxed 108%' : 'Balanced 100%'}
+            </span>
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'compact', label: 'Compact' },
+              { id: 'normal', label: 'Balanced' },
+              { id: 'relaxed', label: 'Relaxed' },
+            ].map((sc) => (
+              <button
+                key={sc.id}
+                type="button"
+                onClick={() => {
+                  haptic.trigger('selection');
+                  onUpdateSettings({ fontSizeScale: sc.id as FontSizeScale });
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition-all ${
+                  (settings.fontSizeScale || 'normal') === sc.id
+                    ? 'bg-cyan-950/40 border-cyan-400 text-cyan-300 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {sc.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Theme Presets */}
+        <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider block">
+              Aesthetic Theme Presets
+            </span>
+            {onOpenThemeStudio && (
+              <button
+                onClick={onOpenThemeStudio}
+                className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
+              >
+                <span>Browse All ({BUILTIN_THEMES.length})</span>
+                <Sparkles className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {BUILTIN_THEMES.slice(0, 8).map((th) => {
+              const isSelected = settings.theme === th.id;
+              return (
+                <button
+                  key={th.id}
+                  onClick={() => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({
+                      theme: th.id,
+                      activeCustomTheme: th,
+                      fontFamily: th.typography.fontFamily || settings.fontFamily,
+                      fontHeading: th.typography.headingFont || settings.fontHeading,
+                      fontMono: th.typography.monoFont || settings.fontMono,
+                    });
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition-all relative overflow-hidden ${
+                    isSelected
+                      ? 'border-cyan-400 bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div
+                      className="w-3.5 h-3.5 rounded-full border border-white/20"
+                      style={{ backgroundColor: th.colors.primaryAccent }}
+                    />
+                    <div
+                      className="w-3.5 h-3.5 rounded-full border border-white/20"
+                      style={{ backgroundColor: th.colors.background }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold block truncate text-slate-200">{th.name}</span>
+                  <span className="text-[10px] text-slate-500 capitalize block truncate mt-0.5">{th.vibe}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 4. iOS Appearance & Tactile Haptics */}
       <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-slate-800">
         <div className="flex items-center gap-2">
           <Smartphone className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-sm font-bold text-white">iOS & Touch Customization</h2>
+          <h2 className="text-sm font-bold text-white">iOS & Touch Ergonomics</h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -757,36 +931,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 }`}
               />
             </button>
-          </div>
-        </div>
-
-        {/* Theme Palette */}
-        <div className="pt-2 border-t border-slate-800">
-          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-2">
-            iOS Studio Theme
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'oled', label: 'OLED Pitch Black', bg: 'bg-black' },
-              { id: 'slate', label: 'Obsidian Slate', bg: 'bg-slate-950' },
-              { id: 'navy', label: 'Midnight Navy', bg: 'bg-slate-900' },
-            ].map((th) => (
-              <button
-                key={th.id}
-                onClick={() => {
-                  haptic.trigger('selection');
-                  onUpdateSettings({ theme: th.id as any });
-                }}
-                className={`p-3 rounded-xl border text-center transition-all ${
-                  settings.theme === th.id
-                    ? 'border-cyan-400 text-cyan-300 bg-slate-900/90'
-                    : 'border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <div className={`w-6 h-6 rounded-full mx-auto mb-1.5 border border-slate-700 ${th.bg}`} />
-                <span className="text-xs font-semibold block">{th.label}</span>
-              </button>
-            ))}
           </div>
         </div>
       </div>

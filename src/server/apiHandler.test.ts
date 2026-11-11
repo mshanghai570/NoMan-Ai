@@ -166,3 +166,18 @@ test('non-WebLLM chat keeps streaming and the configured Ollama retry', async (t
     'http://localhost:11434/api/chat',
   ]);
 });
+
+test('generate-theme endpoint returns structured theme with colors and typography', async () => {
+  const response = await postJson('/api/gemini/generate-theme', {
+    prompt: 'Cyberpunk 2077 Night City neon yellow and cyan with dark carbon texture',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers.get('content-type') || '', /application\/json/);
+  const data = JSON.parse(response.output);
+  assert.ok(data.theme);
+  assert.ok(data.theme.name);
+  assert.ok(data.theme.colors.background);
+  assert.ok(data.theme.colors.primaryAccent);
+  assert.ok(data.theme.typography.fontFamily);
+});

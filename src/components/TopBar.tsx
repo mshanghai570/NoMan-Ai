@@ -9,6 +9,7 @@ interface TopBarProps {
   onOpenPwaInstall: () => void;
   onQuickGenerate: () => void;
   nsfwMode: 'safe' | 'warn' | 'unrestricted';
+  onOpenThemeStudio?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -17,6 +18,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenPwaInstall,
   onQuickGenerate,
   nsfwMode,
+  onOpenThemeStudio,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full pt-safe glass-panel border-b border-slate-800/80 transition-all">
@@ -49,7 +51,21 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Zone 3: Quick Action & User Profile */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {onOpenThemeStudio && (
+            <button
+              onClick={() => {
+                haptic.trigger('selection');
+                onOpenThemeStudio();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-cyan-950/80 to-violet-950/80 text-cyan-300 border border-cyan-500/30 hover:border-cyan-400 active:scale-95 transition-all min-h-[36px]"
+              title="Customize Fonts & AI Theme"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden xs:inline">Theme & Fonts</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               haptic.trigger('selection');

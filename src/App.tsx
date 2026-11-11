@@ -22,6 +22,8 @@ import { LibraryView } from './components/LibraryView';
 import { SettingsView } from './components/SettingsView';
 import { AuthModal } from './components/AuthModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
+import { ThemeStudioModal } from './components/ThemeStudioModal';
+import { applyThemeToDocument } from './utils/themeManager';
 
 export default function App() {
   const [user, setUser] = useState<User>(() => getStoredUser());
@@ -41,7 +43,20 @@ export default function App() {
   // Modals
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isPwaInstallOpen, setIsPwaInstallOpen] = useState(false);
+  const [isThemeStudioOpen, setIsThemeStudioOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Apply theme & typography on mount and settings changes
+  useEffect(() => {
+    applyThemeToDocument(settings);
+  }, [
+    settings.theme,
+    settings.fontFamily,
+    settings.fontHeading,
+    settings.fontMono,
+    settings.fontSizeScale,
+    settings.activeCustomTheme,
+  ]);
 
   // Sync haptic preference
   useEffect(() => {
@@ -82,6 +97,24 @@ export default function App() {
       return updated;
     });
     showToast('Asset deleted from collection');
+  };
+
+  // Batch delete multiple creations from library
+  const handleDeleteMultiple = (ids: string[]) => {
+    const toDeleteSet = new Set(ids);
+    setGenerations((prev) => {
+      const updated = prev.filter((i) => !toDeleteSet.has(i.id));
+      saveStoredGenerations(updated);
+      return updated;
+    });
+    showToast(`Deleted ${ids.length} creation${ids.length > 1 ? 's' : ''} from collection`);
+  };
+
+  // Clear all creations from library
+  const handleClearAll = () => {
+    setGenerations([]);
+    saveStoredGenerations([]);
+    showToast('All collected creations deleted from library');
   };
 
   // Toggle favorite
@@ -154,6 +187,7 @@ export default function App() {
   };
 
   // Determine theme background
+  // Determine theme background
   const themeBackground =
     settings.theme === 'oled'
       ? 'bg-black text-slate-100'
@@ -162,13 +196,20 @@ export default function App() {
       : 'bg-slate-950 text-slate-100';
 
   return (
-    <div className={`min-h-screen ${themeBackground} flex flex-col font-sans transition-colors duration-300 pb-20 sm:pb-24`}>
+    <div
+      className={`min-h-screen ${themeBackground} flex flex-col font-sans transition-colors duration-300 pb-20 sm:pb-24`}
+      style={{
+        backgroundColor: 'var(--theme-bg, #000000)',
+        color: 'var(--theme-text, #f8fafc)',
+      }}
+    >
       {/* Top Navigation Bar */}
       <TopBar
         user={user}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenPwaInstall={() => setIsPwaInstallOpen(true)}
         onQuickGenerate={() => setActiveTab('generate')}
+        onOpenThemeStudio={() => setIsThemeStudioOpen(true)}
         nsfwMode={settings.nsfwMode}
       />
 
@@ -220,12 +261,15 @@ export default function App() {
             user={user}
             hfToken={settings.hfToken}
             onDeleteItem={handleDeleteItem}
+            onDeleteItems={handleDeleteMultiple}
+            onClearAll={handleClearAll}
             onToggleFavorite={handleToggleFavorite}
             onSendToVideoLab={handleSendToVideoLab}
             onExtendVideo={handleExtendVideo}
             onSaveGeneration={handleSaveGeneration}
             onExportData={handleExportData}
             onImportData={handleImportData}
+            onNavigateToCreate={(mode) => setActiveTab(mode === 'video' ? 'video' : 'generate')}
           />
         )}
 
@@ -233,6 +277,7 @@ export default function App() {
           <SettingsView
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            onOpenThemeStudio={() => setIsThemeStudioOpen(true)}
           />
         )}
       </main>
@@ -267,6 +312,14 @@ export default function App() {
       <PwaInstallModal
         isOpen={isPwaInstallOpen}
         onClose={() => setIsPwaInstallOpen(false)}
+      />
+
+      <ThemeStudioModal
+        isOpen={isThemeStudioOpen}
+        onClose={() => setIsThemeStudioOpen(false)}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onShowToast={showToast}
       />
     </div>
   );

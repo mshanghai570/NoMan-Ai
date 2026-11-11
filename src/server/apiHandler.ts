@@ -48,6 +48,220 @@ const parseJsonBody = async (req: IncomingMessage): Promise<any> => {
   });
 };
 
+const synthesizeThemeFromPrompt = (prompt: string): any => {
+  const p = (prompt || '').toLowerCase();
+  const id = `custom_${Date.now()}`;
+
+  if (p.includes('cyber') || p.includes('neon') || p.includes('tokyo') || p.includes('hacker')) {
+    return {
+      id,
+      name: 'Neo Cyber Glitch',
+      description: 'High-contrast neo-Tokyo streets with electric cyan, acid yellow, and cybernetic fonts.',
+      vibe: 'cyberpunk',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#07090e',
+        surface: '#0f141f',
+        card: 'rgba(15, 20, 31, 0.85)',
+        border: 'rgba(0, 240, 255, 0.28)',
+        primaryAccent: '#00f0ff',
+        secondaryAccent: '#ffe600',
+        glow: 'rgba(0, 240, 255, 0.4)',
+        textPrimary: '#ffffff',
+        textMuted: '#94a3b8',
+      },
+      typography: {
+        fontFamily: 'Space Grotesk',
+        headingFont: 'Orbitron',
+        monoFont: 'Space Mono',
+        googleFontFamilies: ['Space Grotesk', 'Orbitron', 'Space Mono'],
+      },
+      borderRadius: 'md',
+    };
+  }
+
+  if (p.includes('synth') || p.includes('80') || p.includes('retro') || p.includes('vapor') || p.includes('sunset')) {
+    return {
+      id,
+      name: 'Retro Synthwave Sunset',
+      description: 'Magenta neon sunset over a digital horizon with 80s arcade typography.',
+      vibe: 'synthwave',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#120822',
+        surface: '#1c0d36',
+        card: 'rgba(28, 13, 54, 0.82)',
+        border: 'rgba(217, 70, 239, 0.28)',
+        primaryAccent: '#d946ef',
+        secondaryAccent: '#f59e0b',
+        glow: 'rgba(217, 70, 239, 0.45)',
+        textPrimary: '#fae8ff',
+        textMuted: '#d8b4fe',
+      },
+      typography: {
+        fontFamily: 'Outfit',
+        headingFont: 'Audiowide',
+        monoFont: 'Space Mono',
+        googleFontFamilies: ['Outfit', 'Audiowide', 'Space Mono'],
+      },
+      borderRadius: '2xl',
+    };
+  }
+
+  if (p.includes('dracula') || p.includes('goth') || p.includes('blood') || p.includes('vampire') || p.includes('crimson')) {
+    return {
+      id,
+      name: 'Dracula Gothic Nocturne',
+      description: 'Obsidian crypt with deep velvet crimson highlights and mythic serif elegance.',
+      vibe: 'gothic',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#0a0507',
+        surface: '#170a0f',
+        card: 'rgba(23, 10, 15, 0.85)',
+        border: 'rgba(244, 63, 94, 0.25)',
+        primaryAccent: '#f43f5e',
+        secondaryAccent: '#a855f7',
+        glow: 'rgba(244, 63, 94, 0.35)',
+        textPrimary: '#fff1f2',
+        textMuted: '#fda4af',
+      },
+      typography: {
+        fontFamily: 'Cinzel',
+        headingFont: 'Cinzel',
+        monoFont: 'JetBrains Mono',
+        googleFontFamilies: ['Cinzel'],
+      },
+      borderRadius: 'lg',
+    };
+  }
+
+  if (p.includes('gold') || p.includes('emerald') || p.includes('luxury') || p.includes('royal') || p.includes('champagne')) {
+    return {
+      id,
+      name: 'Emerald & Royal Gold',
+      description: 'Deep jewel-toned emerald with warm champagne gold accents and editorial typography.',
+      vibe: 'luxury',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#03100a',
+        surface: '#062014',
+        card: 'rgba(6, 32, 20, 0.82)',
+        border: 'rgba(16, 185, 129, 0.25)',
+        primaryAccent: '#10b981',
+        secondaryAccent: '#fbbf24',
+        glow: 'rgba(16, 185, 129, 0.35)',
+        textPrimary: '#ecfdf5',
+        textMuted: '#a7f3d0',
+      },
+      typography: {
+        fontFamily: 'Plus Jakarta Sans',
+        headingFont: 'Playfair Display',
+        monoFont: 'JetBrains Mono',
+        googleFontFamilies: ['Playfair Display'],
+      },
+      borderRadius: 'xl',
+    };
+  }
+
+  if (p.includes('matrix') || p.includes('terminal') || p.includes('console') || p.includes('green')) {
+    return {
+      id,
+      name: 'Matrix Phosphor Stream',
+      description: 'CRT phosphor green on pitch black with authentic monospace coding type.',
+      vibe: 'matrix',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#020904',
+        surface: '#051408',
+        card: 'rgba(5, 20, 8, 0.88)',
+        border: 'rgba(34, 197, 94, 0.28)',
+        primaryAccent: '#22c55e',
+        secondaryAccent: '#84cc16',
+        glow: 'rgba(34, 197, 94, 0.4)',
+        textPrimary: '#dcfce7',
+        textMuted: '#86efac',
+      },
+      typography: {
+        fontFamily: 'JetBrains Mono',
+        headingFont: 'Share Tech Mono',
+        monoFont: 'JetBrains Mono',
+        googleFontFamilies: ['JetBrains Mono', 'Share Tech Mono'],
+      },
+      borderRadius: 'none',
+    };
+  }
+
+  if (p.includes('nordic') || p.includes('ice') || p.includes('frost') || p.includes('arctic') || p.includes('blue')) {
+    return {
+      id,
+      name: 'Nordic Arctic Frost',
+      description: 'Crisp glacial ice cyan on deep Scandinavian midnight with ultra-clean modern typography.',
+      vibe: 'minimal',
+      createdAt: Date.now(),
+      isAiGenerated: true,
+      prompt,
+      colors: {
+        background: '#040d18',
+        surface: '#091829',
+        card: 'rgba(9, 24, 41, 0.82)',
+        border: 'rgba(56, 189, 248, 0.25)',
+        primaryAccent: '#38bdf8',
+        secondaryAccent: '#a5f3fc',
+        glow: 'rgba(56, 189, 248, 0.35)',
+        textPrimary: '#f0f9ff',
+        textMuted: '#bae6fd',
+      },
+      typography: {
+        fontFamily: 'Inter',
+        headingFont: 'Urbanist',
+        monoFont: 'Fira Code',
+        googleFontFamilies: ['Inter', 'Urbanist', 'Fira Code'],
+      },
+      borderRadius: 'xl',
+    };
+  }
+
+  // Default balanced creative theme
+  return {
+    id,
+    name: 'Harmonic Twilight Studio',
+    description: `A custom theme inspired by "${prompt}" with deep obsidian tones and dual neon glow.`,
+    vibe: 'custom',
+    createdAt: Date.now(),
+    isAiGenerated: true,
+    prompt,
+    colors: {
+      background: '#080a14',
+      surface: '#0f1426',
+      card: 'rgba(15, 20, 38, 0.82)',
+      border: 'rgba(99, 102, 241, 0.25)',
+      primaryAccent: '#6366f1',
+      secondaryAccent: '#06b6d4',
+      glow: 'rgba(99, 102, 241, 0.35)',
+      textPrimary: '#f8fafc',
+      textMuted: '#94a3b8',
+    },
+    typography: {
+      fontFamily: 'Space Grotesk',
+      headingFont: 'Space Grotesk',
+      monoFont: 'JetBrains Mono',
+      googleFontFamilies: ['Space Grotesk'],
+    },
+    borderRadius: 'xl',
+  };
+};
+
 const rejectWebLlmProvider = (provider: unknown, res: ServerResponse): boolean => {
   if (provider !== 'webllm') return false;
 
@@ -266,6 +480,116 @@ Output strictly valid JSON with this exact shape:
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: err.message || 'Keyword suggestion failed' }));
+      return true;
+    }
+  }
+
+  // 1b-2. Gemini AI Theme & Font Generator
+  if (url === '/api/gemini/generate-theme' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { prompt = '', apiKey } = body;
+
+      if (!prompt || typeof prompt !== 'string') {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Missing prompt parameter' }));
+        return true;
+      }
+
+      // Check if user provided custom API key or use system environment key
+      let ai = apiKey
+        ? new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } })
+        : getGeminiClient();
+
+      if (!ai) {
+        // Fallback intelligent theme synthesizer when Gemini API key is not present
+        const theme = synthesizeThemeFromPrompt(prompt);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ theme, source: 'synthesizer' }));
+        return true;
+      }
+
+      const systemInstruction = `You are an elite design system architect and UI theme generator for "NoMan AI".
+Given the user's theme concept, visual aesthetic, or vibe prompt, design a complete, stunning, high-contrast dark-mode color scheme and typography font pairing.
+The fonts must be well-known Google Fonts (e.g. "Space Grotesk", "Inter", "Plus Jakarta Sans", "Outfit", "Orbitron", "Cinzel", "Playfair Display", "Audiowide", "JetBrains Mono", "Syne", "Urbanist", "Poppins", "Merriweather", "Lora", "Rajdhani", "Share Tech Mono").
+
+Strictly respond with JSON matching this structure:
+{
+  "id": string (lowercase slug, e.g. "cyberpunk-electric-citrus"),
+  "name": string (evocative creative title, e.g. "Electric Citrus 2077"),
+  "description": string (1-2 sentences capturing aesthetic atmosphere),
+  "vibe": string ("cyberpunk" | "synthwave" | "gothic" | "luxury" | "minimal" | "retro" | "nature" | "pastel" | "matrix" | "cosmic" | "custom"),
+  "colors": {
+    "background": string (dark background hex, e.g. "#07090e"),
+    "surface": string (panel surface hex, e.g. "#0e1420"),
+    "card": string (rgba for backdrop-blur glass panels, e.g. "rgba(14, 20, 32, 0.85)"),
+    "border": string (rgba with subtle accent tint, e.g. "rgba(0, 240, 255, 0.25)"),
+    "primaryAccent": string (vibrant primary hex, e.g. "#00f0ff"),
+    "secondaryAccent": string (complementary accent hex, e.g. "#ffe600"),
+    "glow": string (rgba glow color, e.g. "rgba(0, 240, 255, 0.35)"),
+    "textPrimary": string (high-contrast readable hex, e.g. "#ffffff"),
+    "textMuted": string (secondary readable text hex, e.g. "#94a3b8")
+  },
+  "typography": {
+    "fontFamily": string (primary body Google Font),
+    "headingFont": string (display heading Google Font),
+    "monoFont": string (monospace Google Font),
+    "googleFontFamilies": string[] (array of Google Font names used)
+  },
+  "borderRadius": string ("none" | "sm" | "md" | "lg" | "xl" | "2xl" | "full")
+}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: `Theme Concept Prompt: "${prompt}"`,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.LOW,
+          },
+        },
+      });
+
+      const rawText = (response.text || '{}').trim();
+      let parsedTheme: any = {};
+      try {
+        parsedTheme = JSON.parse(rawText);
+      } catch (parseErr) {
+        parsedTheme = synthesizeThemeFromPrompt(prompt);
+      }
+
+      // Ensure required structure
+      if (!parsedTheme.colors || !parsedTheme.typography) {
+        parsedTheme = synthesizeThemeFromPrompt(prompt);
+      } else {
+        parsedTheme.id = parsedTheme.id || `ai_theme_${Date.now()}`;
+        parsedTheme.createdAt = Date.now();
+        parsedTheme.isAiGenerated = true;
+        parsedTheme.prompt = prompt;
+      }
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ theme: parsedTheme, source: 'gemini' }));
+      return true;
+    } catch (err: any) {
+      console.warn('Gemini theme generation fallback:', err?.message);
+      // Seamlessly fall back to algorithmic synthesizer
+      try {
+        const body = await parseJsonBody(req).catch(() => ({}));
+        const theme = synthesizeThemeFromPrompt(body.prompt || 'Cyberpunk');
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ theme, source: 'synthesizer' }));
+      } catch {
+        const theme = synthesizeThemeFromPrompt('Studio');
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ theme, source: 'synthesizer' }));
+      }
       return true;
     }
   }

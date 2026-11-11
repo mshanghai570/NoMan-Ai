@@ -166,11 +166,52 @@ export interface UserSettings {
   localModelName: string;
   webGpuAcceleration: boolean;
   hapticFeedback: boolean;
-  theme: 'oled' | 'slate' | 'navy';
+  theme: string;
+  fontFamily?: string;
+  fontHeading?: string;
+  fontMono?: string;
+  fontSizeScale?: FontSizeScale;
+  activeCustomTheme?: CustomTheme;
+  customThemes?: CustomTheme[];
+  themeApiKey?: string;
   autoSave: boolean;
   defaultAspectRatio: AspectRatio;
   defaultSteps: number;
   defaultCfgScale: number;
+}
+
+export type FontSizeScale = 'compact' | 'normal' | 'relaxed';
+
+export interface ThemeColors {
+  background: string;
+  surface: string;
+  card: string;
+  border: string;
+  primaryAccent: string;
+  secondaryAccent: string;
+  glow: string;
+  textPrimary: string;
+  textMuted: string;
+}
+
+export interface ThemeTypography {
+  fontFamily: string;
+  headingFont?: string;
+  monoFont?: string;
+  googleFontFamilies?: string[];
+}
+
+export interface CustomTheme {
+  id: string;
+  name: string;
+  description: string;
+  vibe: string;
+  createdAt: number;
+  isAiGenerated?: boolean;
+  prompt?: string;
+  colors: ThemeColors;
+  typography: ThemeTypography;
+  borderRadius?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
 }
 
 export interface PromptEnhancementResponse {
