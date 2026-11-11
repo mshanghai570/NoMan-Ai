@@ -4,6 +4,8 @@ export interface VideoRenderOptions {
   imageUrl: string;
   motionStyle: MotionStyle;
   duration: number; // seconds
+  prompt?: string;
+  negativePrompt?: string;
   fps?: number;
   width?: number;
   height?: number;
@@ -18,6 +20,7 @@ export interface VideoExtendOptions {
   existingMotion: MotionStyle;
   continuationMotion: MotionStyle;
   prompt: string;
+  negativePrompt?: string;
   fps?: number;
   onProgress?: (percent: number) => void;
 }

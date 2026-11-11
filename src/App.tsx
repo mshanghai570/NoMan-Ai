@@ -222,6 +222,7 @@ export default function App() {
             onSendToVideoLab={handleSendToVideoLab}
             initialPrompt={preloadedStudioPrompt}
             initialNsfw={preloadedStudioNsfw}
+            onUpdateSettings={handleUpdateSettings}
           />
         )}
 
@@ -233,6 +234,7 @@ export default function App() {
             preloadedPrompt={preloadedVideoPrompt}
             preloadedExtendItem={preloadedExtendItem}
             onSaveGeneration={handleSaveGeneration}
+            onUpdateSettings={handleUpdateSettings}
           />
         )}
 

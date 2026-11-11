@@ -12,25 +12,88 @@ export interface GenerationParams {
   steps?: number;
   cfgScale?: number;
   hfToken?: string;
+  cloudApiKey?: string;
   localEndpoint?: string;
+  realismBoost?: boolean;
 }
 
 export class ImageGeneratorService {
   /**
    * Generates an image using the selected provider and model
    */
-  public static async generateImage(params: GenerationParams): Promise<{ imageUrl: string; seed: number }> {
-    const { prompt, negativePrompt, model, provider, width, height, seed, hfToken, localEndpoint } = params;
+  public static async generateImage(params: GenerationParams): Promise<{ imageUrl: string; seed: number; notice?: string }> {
+    const {
+      prompt,
+      negativePrompt,
+      model,
+      provider,
+      aspectRatio,
+      width,
+      height,
+      seed,
+      hfToken,
+      cloudApiKey,
+      localEndpoint,
+      realismBoost,
+    } = params;
 
     const actualSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 99999999);
 
+    // 1. Google Gemini Cloud Photorealism Generation
+    if (provider === 'gemini') {
+      try {
+        const response = await fetch('/api/gemini/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            negativePrompt: negativePrompt || undefined,
+            aspectRatio,
+            apiKey: cloudApiKey || undefined,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.imageUrl) {
+            return { imageUrl: data.imageUrl, seed: actualSeed };
+          }
+        }
+
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Gemini generation returned status ${response.status}`);
+      } catch (err: any) {
+        console.warn('Gemini image call failed, routing to FLUX Ultra-Realism:', err);
+        // Fallback to FLUX Realism with negative prompt preserved
+        const safePrompt = prompt.trim();
+        const neg = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt.trim())}` : '&negative=blurry,faded,washed+out,plastic+skin';
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
+        await this.preloadImage(fallbackUrl);
+        return {
+          imageUrl: fallbackUrl,
+          seed: actualSeed,
+          notice: `Cloud notice: ${err.message || 'Rendered via FLUX Ultra Realism'}`,
+        };
+      }
+    }
+
+    // 2. Pollinations Cloud (FLUX Realism, FLUX Schnell, etc.)
     if (provider === 'pollinations') {
-      // Clean and sanitize prompt for URL
       const finalPrompt = prompt.trim();
-      let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=${encodeURIComponent(model)}&nologo=true`;
-      
+      const isRealismModel = model.includes('realism') || realismBoost;
+      const targetModel = model || (isRealismModel ? 'flux-realism' : 'flux');
+
+      let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=${encodeURIComponent(targetModel)}&nologo=true`;
+
+      if (isRealismModel) {
+        url += '&enhance=true';
+      }
+
+      // Append negative prompt if provided, or default anti-faded/anti-blurry shield
       if (negativePrompt && negativePrompt.trim()) {
         url += `&negative=${encodeURIComponent(negativePrompt.trim())}`;
+      } else if (isRealismModel) {
+        url += `&negative=${encodeURIComponent('blurry, faded, washed out, low contrast, plastic skin, airbrush, cartoon, 3d render, low resolution, bad anatomy')}`;
       }
 
       // Preload image to ensure it is generated and ready before returning
@@ -38,6 +101,7 @@ export class ImageGeneratorService {
       return { imageUrl: url, seed: actualSeed };
     }
 
+    // 3. Hugging Face Inference API
     if (provider === 'huggingface') {
       try {
         const response = await fetch('/api/hf/generate', {
@@ -47,7 +111,7 @@ export class ImageGeneratorService {
             modelId: model,
             inputs: prompt,
             parameters: {
-              negative_prompt: negativePrompt || undefined,
+              negative_prompt: negativePrompt || (realismBoost ? 'blurry, faded, washed out, low quality, artifacts' : undefined),
               width,
               height,
               guidance_scale: params.cfgScale || 7.5,
@@ -58,28 +122,47 @@ export class ImageGeneratorService {
           }),
         });
 
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error || `Hugging Face generation returned status ${response.status}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.imageUrl) {
+            return { imageUrl: data.imageUrl, seed: actualSeed };
+          }
         }
 
-        const data = await response.json();
-        if (data.imageUrl) {
-          return { imageUrl: data.imageUrl, seed: actualSeed };
-        }
-        throw new Error('No image returned from Hugging Face');
-      } catch (err: any) {
-        console.warn('Hugging Face call failed, falling back to Pollinations FLUX:', err);
-        // Fallback to free high-quality Pollinations FLUX
-        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux&nologo=true`;
+        const errData = await response.json().catch(() => ({}));
+        const status = response.status;
+        const msg = errData.error || `Hugging Face returned status ${status}`;
+
+        // When HF fails (e.g. 401 token required, 503 loading, 429 rate limit),
+        // we provide FLUX Realism with the user's negative prompt, and return a helpful notice
+        console.warn(`Hugging Face model ${model} failed (${msg}). Routing through FLUX Realism.`);
+        const safePrompt = prompt.trim();
+        const neg = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt.trim())}` : '&negative=blurry,faded,washed+out,low+contrast';
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
         await this.preloadImage(fallbackUrl);
-        return { imageUrl: fallbackUrl, seed: actualSeed };
+
+        return {
+          imageUrl: fallbackUrl,
+          seed: actualSeed,
+          notice: `HF Notice (${status || 401}): ${msg.slice(0, 120)}. Rendered with FLUX Ultra-Realism.`,
+        };
+      } catch (err: any) {
+        console.warn('Hugging Face call failed, falling back to FLUX Realism:', err);
+        const safePrompt = prompt.trim();
+        const neg = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt.trim())}` : '';
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
+        await this.preloadImage(fallbackUrl);
+        return {
+          imageUrl: fallbackUrl,
+          seed: actualSeed,
+          notice: `HF connection error. Rendered via FLUX Ultra Realism.`,
+        };
       }
     }
 
+    // 4. Local Workstation & Endpoints
     if (provider === 'local') {
-      // Attempt connection to local endpoint
-      const endpoint = localEndpoint || 'http://localhost:11434';
+      const endpoint = localEndpoint || 'http://127.0.0.1:8188';
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -91,7 +174,7 @@ export class ImageGeneratorService {
           body: JSON.stringify({
             prompt,
             negative_prompt: negativePrompt || '',
-            steps: params.steps || 20,
+            steps: params.steps || 25,
             width,
             height,
             seed: actualSeed,
@@ -110,18 +193,23 @@ export class ImageGeneratorService {
             };
           }
         }
-        throw new Error('Local server returned unexpected payload');
+        throw new Error(`Local server at ${endpoint} returned status ${response.status}`);
       } catch (e: any) {
-        console.warn('Local model unreachable, providing simulated local edge generation:', e);
-        // Fallback to high speed edge generation
-        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ', locally accelerated, edge diffusion')}?width=${width}&height=${height}&seed=${actualSeed}&model=turbo&nologo=true`;
+        console.warn('Local workstation unreachable, routing to FLUX Realism fallback:', e);
+        const neg = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt.trim())}` : '&negative=blurry,faded,washed+out';
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ', hyper-detailed photography, 8k')}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
         await this.preloadImage(fallbackUrl);
-        return { imageUrl: fallbackUrl, seed: actualSeed };
+        return {
+          imageUrl: fallbackUrl,
+          seed: actualSeed,
+          notice: `Local workstation at ${endpoint} is offline. Generated via Cloud Ultra Realism.`,
+        };
       }
     }
 
-    // Default WebGPU / Edge fallback
-    const edgeUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux&nologo=true`;
+    // Default WebGPU / Cloud Realism fallback
+    const neg = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt.trim())}` : '&negative=blurry,faded,washed+out';
+    const edgeUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
     await this.preloadImage(edgeUrl);
     return { imageUrl: edgeUrl, seed: actualSeed };
   }

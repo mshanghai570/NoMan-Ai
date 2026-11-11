@@ -1,6 +1,12 @@
 export type GenerationType = 'image' | 'video';
 
-export type AIProvider = 'pollinations' | 'huggingface' | 'local' | 'webgpu';
+export type AIProvider = 'pollinations' | 'huggingface' | 'local' | 'webgpu' | 'gemini' | 'custom';
+
+export type ExecutionMethod = 'cloud' | 'local';
+export type ImageCloudProvider = 'gemini' | 'huggingface' | 'pollinations';
+export type ImageLocalProvider = 'comfyui' | 'sd-webui' | 'ollama' | 'webgpu';
+export type VideoCloudProvider = 'gemini' | 'huggingface' | 'pollinations';
+export type VideoLocalProvider = 'webgpu' | 'comfyui' | 'sd-webui';
 
 export type AspectRatio = '1:1' | '9:16' | '16:9' | '4:3' | '3:4';
 
@@ -168,6 +174,16 @@ export interface UserSettings {
   chatFallbackModel: string;
   defaultProvider: AIProvider;
   defaultModel: string;
+  imageExecutionMethod: ExecutionMethod;
+  videoExecutionMethod: ExecutionMethod;
+  imageCloudProvider: ImageCloudProvider;
+  imageLocalProvider: ImageLocalProvider;
+  imageLocalEndpoint: string;
+  videoCloudProvider: VideoCloudProvider;
+  videoLocalProvider: VideoLocalProvider;
+  videoLocalEndpoint: string;
+  cloudApiKey?: string;
+  realismBoost: boolean;
   hfToken: string;
   customModels: CustomModel[];
   localEndpoint: string;

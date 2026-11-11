@@ -3,6 +3,7 @@ import type { GenerationItem, MotionStyle, UserSettings } from '../types';
 import { MOTION_STYLES } from '../constants/models';
 import { VideoEngine } from '../services/videoEngine';
 import { ImageGeneratorService } from '../services/imageGenerator';
+import { ProviderAgentSetupModal } from './ProviderAgentSetupModal';
 import {
   Video,
   Play,
@@ -25,6 +26,12 @@ import {
   MoveRight,
   RotateCw,
   AlertCircle,
+  Cloud,
+  Server,
+  Shield,
+  ShieldCheck,
+  Check,
+  Settings2,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 
@@ -35,6 +42,7 @@ interface VideoStudioViewProps {
   preloadedPrompt?: string;
   preloadedExtendItem?: GenerationItem;
   onSaveGeneration: (item: GenerationItem) => void;
+  onUpdateSettings?: (newSettings: Partial<UserSettings>) => void;
 }
 
 export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
@@ -44,6 +52,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
   preloadedPrompt,
   preloadedExtendItem,
   onSaveGeneration,
+  onUpdateSettings,
 }) => {
   // Mode: 'image-to-video' | 'extend' | 'text-to-video'
   const [activeMode, setActiveMode] = useState<'image-to-video' | 'extend' | 'text-to-video'>(
@@ -70,6 +79,56 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
 
   // Text to Video State
   const [textPrompt, setTextPrompt] = useState<string>('Aerial cinematic sweep over floating bioluminescent islands in violet twilight');
+
+  // Negative Prompt State for video motion & keyframe generation
+  const [negativePrompt, setNegativePrompt] = useState<string>(
+    'blurry frames, flickering, jitter, unnatural morphing, faded colors, washed out, low contrast, distorted anatomy, stuttering, artifacts'
+  );
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
+
+  // Quick video-specific negative tags
+  const quickNegativeVideoTags = [
+    { label: 'blurry frames', tag: 'blurry frames' },
+    { label: 'flicker & jitter', tag: 'flickering, jitter' },
+    { label: 'unnatural morphing', tag: 'unnatural morphing, distorted shapes' },
+    { label: 'faded colors', tag: 'faded colors, washed out' },
+    { label: 'distorted faces', tag: 'distorted faces, bad eyes' },
+    { label: 'choppy motion', tag: 'choppy motion, low frame rate' },
+    { label: 'artifacts & noise', tag: 'artifacts, noise, compression' },
+    { label: 'watermark & text', tag: 'watermark, text, logo' },
+  ];
+
+  const handleToggleNegativeTag = (tag: string) => {
+    haptic.trigger('selection');
+    const parts = tag.split(',').map((p) => p.trim());
+    const lowerNeg = negativePrompt.toLowerCase();
+    const hasTag = parts.some((p) => lowerNeg.includes(p.toLowerCase()));
+
+    if (hasTag) {
+      let updated = negativePrompt;
+      parts.forEach((p) => {
+        const regex = new RegExp(`(,\\s*)?${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}(,\\s*)?`, 'gi');
+        updated = updated.replace(regex, (m, p1, p2) => (p1 && p2 ? ', ' : ''));
+      });
+      setNegativePrompt(updated.trim().replace(/^,\s*|,\s*$/g, ''));
+    } else {
+      const trimmed = negativePrompt.trim();
+      if (!trimmed) {
+        setNegativePrompt(tag);
+      } else if (trimmed.endsWith(',')) {
+        setNegativePrompt(`${trimmed} ${tag}`);
+      } else {
+        setNegativePrompt(`${trimmed}, ${tag}`);
+      }
+    }
+  };
+
+  const handleApplyVideoPhotorealismShield = () => {
+    haptic.trigger('success');
+    setNegativePrompt(
+      'blurry frames, flickering, jitter, unnatural morphing, faded colors, washed out, low contrast, distorted anatomy, stuttering, artifacts'
+    );
+  };
 
   // Render & Playback State
   const [isRendering, setIsRendering] = useState(false);
@@ -158,6 +217,8 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         imageUrl: sourceImage,
         motionStyle,
         duration,
+        prompt: sourcePrompt,
+        negativePrompt: negativePrompt.trim() || undefined,
         fps: 30,
         onProgress: (p) => setRenderProgress(p),
       });
@@ -168,6 +229,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         userId: 'current',
         type: 'video',
         prompt: sourcePrompt,
+        negativePrompt: negativePrompt.trim() || undefined,
         model: 'noman-motion-engine',
         modelLabel: 'NoMan Cinematic Motion v2.4',
         provider: 'pollinations',
@@ -213,16 +275,18 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
     setIsSaved(false);
 
     try {
-      // 1. Generate continuation image keyframe based on extension prompt
+      // 1. Generate continuation image keyframe with photorealism & negative prompt
       const baseImg = videoToExtend.thumbnailUrl || videoToExtend.mediaUrl;
       const continuationGen = await ImageGeneratorService.generateImage({
-        prompt: extensionPrompt,
-        model: 'flux',
+        prompt: `${extensionPrompt}, highly detailed cinematic continuation frame, photorealistic textures, 8k`,
+        negativePrompt: negativePrompt.trim() || undefined,
+        model: 'flux-realism',
         provider: 'pollinations',
         aspectRatio: videoToExtend.aspectRatio,
         width: videoToExtend.width || 1280,
         height: videoToExtend.height || 720,
         seed: Math.floor(Math.random() * 9999999),
+        realismBoost: true,
       });
 
       // 2. Stitch and extend sequence
@@ -235,6 +299,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         existingMotion: videoToExtend.videoMetadata?.motionStyle || 'zoom-in',
         continuationMotion: extensionMotion,
         prompt: extensionPrompt,
+        negativePrompt: negativePrompt.trim() || undefined,
         fps: 30,
         onProgress: (p) => setRenderProgress(p),
       });
@@ -245,6 +310,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         userId: 'current',
         type: 'video',
         prompt: `${videoToExtend.prompt} [Extended: ${extensionPrompt}]`,
+        negativePrompt: negativePrompt.trim() || undefined,
         model: 'noman-motion-engine',
         modelLabel: 'NoMan Extended Sequence v2.4',
         provider: 'pollinations',
@@ -298,15 +364,17 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
     setIsSaved(false);
 
     try {
-      // Step 1: Generate high fidelity keyframe from text
+      // Step 1: Generate high fidelity photorealistic keyframe with negative prompt
       const keyframe = await ImageGeneratorService.generateImage({
-        prompt: `${textPrompt}, cinematic widescreen frame, 8k, dynamic composition`,
-        model: 'flux',
+        prompt: `${textPrompt}, cinematic widescreen frame, 8k, dynamic composition, photorealistic direct lighting, sharp focus`,
+        negativePrompt: negativePrompt.trim() || undefined,
+        model: 'flux-realism',
         provider: 'pollinations',
         aspectRatio: '16:9',
         width: 1280,
         height: 720,
         seed: Math.floor(Math.random() * 999999),
+        realismBoost: true,
       });
 
       setRenderProgress(35);
@@ -316,6 +384,8 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         imageUrl: keyframe.imageUrl,
         motionStyle,
         duration,
+        prompt: textPrompt,
+        negativePrompt: negativePrompt.trim() || undefined,
         fps: 30,
         onProgress: (p) => setRenderProgress(35 + Math.round(p * 0.65)),
       });
@@ -326,6 +396,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         userId: 'current',
         type: 'video',
         prompt: textPrompt,
+        negativePrompt: negativePrompt.trim() || undefined,
         model: 'noman-motion-engine',
         modelLabel: 'NoMan Text-to-Video v2.4',
         provider: 'pollinations',
@@ -377,16 +448,50 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
     <div className="max-w-4xl mx-auto px-4 py-4 space-y-6">
       {/* Title & Mode Tabs */}
       <div className="space-y-3 border-b border-slate-800/80 pb-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <span>Video Lab & Extension Studio</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-950 text-violet-300 border border-violet-800/60 font-mono">
-              60 FPS Engine
-            </span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Convert static imagery into dynamic motion, extend timelines seamlessly, and generate continuous cinematic video clips.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <span>Video Lab & Extension Studio</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-violet-950 text-violet-300 border border-violet-800/60 font-mono">
+                60 FPS Engine
+              </span>
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Convert static imagery into dynamic motion, extend timelines seamlessly, and generate continuous cinematic video clips.
+            </p>
+          </div>
+
+          {/* Provider / Execution Agent Pill */}
+          <button
+            type="button"
+            onClick={() => {
+              haptic.trigger('selection');
+              setIsProviderModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-violet-500 text-xs text-slate-200 transition-all active:scale-95 shadow-sm self-start sm:self-auto shrink-0"
+            title="Configure Video Provider: Local Workstation vs Cloud APIs"
+          >
+            {settings.videoExecutionMethod === 'local' ? (
+              <>
+                <Server className="w-3.5 h-3.5 text-violet-400" />
+                <span className="font-semibold text-violet-300">
+                  {settings.videoLocalProvider === 'webgpu' ? 'Local · WebGPU' : 'Local · Workstation'}
+                </span>
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="font-semibold text-cyan-300">
+                  {settings.videoCloudProvider === 'huggingface'
+                    ? 'Cloud · HF SVD'
+                    : settings.videoCloudProvider === 'gemini'
+                    ? 'Cloud · Gemini'
+                    : 'Cloud · 60fps Motion'}
+                </span>
+              </>
+            )}
+            <Settings2 className="w-3 h-3 text-slate-400 ml-0.5" />
+          </button>
         </div>
 
         {/* Mode Segmented Buttons */}
@@ -506,6 +611,66 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Negative Prompt Section (Mode 1) */}
+          <div className="pt-2 border-t border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="video-negative-prompt-1" className="flex items-center gap-1.5 text-xs font-semibold text-rose-300 uppercase tracking-wider">
+                <Shield className="w-3.5 h-3.5 text-rose-400" />
+                <span>Negative Prompt (Exclude in Motion & Frame Clarity)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleApplyVideoPhotorealismShield}
+                  className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 flex items-center gap-1 bg-violet-950/70 px-2 py-0.5 rounded-md border border-violet-800/60 transition-all active:scale-95 shadow-sm"
+                  title="Apply anti-jitter and anti-blur shield"
+                >
+                  <ShieldCheck className="w-3 h-3 text-violet-400" />
+                  <span>Video Motion Shield</span>
+                </button>
+                {negativePrompt && (
+                  <button
+                    type="button"
+                    onClick={() => setNegativePrompt('')}
+                    className="text-slate-500 hover:text-slate-300 text-[11px]"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            <textarea
+              id="video-negative-prompt-1"
+              value={negativePrompt}
+              onChange={(e) => setNegativePrompt(e.target.value)}
+              placeholder="e.g. blurry frames, flickering, jitter, unnatural morphing, faded colors..."
+              rows={2}
+              className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-xl p-3 text-xs border border-rose-950/60 focus:border-rose-400/80 focus:outline-none resize-none font-mono"
+            />
+            {/* Quick negative chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {quickNegativeVideoTags.map((item) => {
+                const first = item.tag.split(',')[0].trim().toLowerCase();
+                const isPresent = negativePrompt.toLowerCase().includes(first);
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleToggleNegativeTag(item.tag)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all flex items-center gap-1 active:scale-95 ${
+                      isPresent
+                        ? 'bg-rose-950/80 border border-rose-500/60 text-rose-200 shadow-sm'
+                        : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {isPresent ? <Check className="w-2.5 h-2.5 text-rose-400" /> : <Plus className="w-2.5 h-2.5 text-slate-500" />}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Motion Style Selector */}
           <div className="space-y-2 pt-2 border-t border-slate-800/80">
@@ -681,6 +846,66 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
             />
           </div>
 
+          {/* Negative Prompt Section (Mode 2) */}
+          <div className="pt-2 border-t border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="video-negative-prompt-2" className="flex items-center gap-1.5 text-xs font-semibold text-rose-300 uppercase tracking-wider">
+                <Shield className="w-3.5 h-3.5 text-rose-400" />
+                <span>Negative Prompt (Exclude in Extension Motion)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleApplyVideoPhotorealismShield}
+                  className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 flex items-center gap-1 bg-violet-950/70 px-2 py-0.5 rounded-md border border-violet-800/60 transition-all active:scale-95 shadow-sm"
+                  title="Apply anti-jitter and anti-blur shield"
+                >
+                  <ShieldCheck className="w-3 h-3 text-violet-400" />
+                  <span>Video Motion Shield</span>
+                </button>
+                {negativePrompt && (
+                  <button
+                    type="button"
+                    onClick={() => setNegativePrompt('')}
+                    className="text-slate-500 hover:text-slate-300 text-[11px]"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            <textarea
+              id="video-negative-prompt-2"
+              value={negativePrompt}
+              onChange={(e) => setNegativePrompt(e.target.value)}
+              placeholder="e.g. blurry frames, flickering, jitter, unnatural morphing, faded colors..."
+              rows={2}
+              className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-xl p-3 text-xs border border-rose-950/60 focus:border-rose-400/80 focus:outline-none resize-none font-mono"
+            />
+            {/* Quick negative chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {quickNegativeVideoTags.map((item) => {
+                const first = item.tag.split(',')[0].trim().toLowerCase();
+                const isPresent = negativePrompt.toLowerCase().includes(first);
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleToggleNegativeTag(item.tag)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all flex items-center gap-1 active:scale-95 ${
+                      isPresent
+                        ? 'bg-rose-950/80 border border-rose-500/60 text-rose-200 shadow-sm'
+                        : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {isPresent ? <Check className="w-2.5 h-2.5 text-rose-400" /> : <Plus className="w-2.5 h-2.5 text-slate-500" />}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Extension Duration & Motion Selector */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
             <div>
@@ -769,6 +994,66 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
             rows={3}
             className="w-full bg-slate-900 text-slate-100 placeholder-slate-500 rounded-xl p-3.5 text-sm border border-slate-700/80 focus:border-cyan-400 focus:outline-none resize-none"
           />
+
+          {/* Negative Prompt Section (Mode 3) */}
+          <div className="pt-2 border-t border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="video-negative-prompt-3" className="flex items-center gap-1.5 text-xs font-semibold text-rose-300 uppercase tracking-wider">
+                <Shield className="w-3.5 h-3.5 text-rose-400" />
+                <span>Negative Prompt (Exclude in Motion & Keyframe)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleApplyVideoPhotorealismShield}
+                  className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 flex items-center gap-1 bg-violet-950/70 px-2 py-0.5 rounded-md border border-violet-800/60 transition-all active:scale-95 shadow-sm"
+                  title="Apply anti-jitter and anti-blur shield"
+                >
+                  <ShieldCheck className="w-3 h-3 text-violet-400" />
+                  <span>Video Motion Shield</span>
+                </button>
+                {negativePrompt && (
+                  <button
+                    type="button"
+                    onClick={() => setNegativePrompt('')}
+                    className="text-slate-500 hover:text-slate-300 text-[11px]"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            <textarea
+              id="video-negative-prompt-3"
+              value={negativePrompt}
+              onChange={(e) => setNegativePrompt(e.target.value)}
+              placeholder="e.g. blurry frames, flickering, jitter, unnatural morphing, faded colors..."
+              rows={2}
+              className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-xl p-3 text-xs border border-rose-950/60 focus:border-rose-400/80 focus:outline-none resize-none font-mono"
+            />
+            {/* Quick negative chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {quickNegativeVideoTags.map((item) => {
+                const first = item.tag.split(',')[0].trim().toLowerCase();
+                const isPresent = negativePrompt.toLowerCase().includes(first);
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleToggleNegativeTag(item.tag)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all flex items-center gap-1 active:scale-95 ${
+                      isPresent
+                        ? 'bg-rose-950/80 border border-rose-500/60 text-rose-200 shadow-sm'
+                        : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {isPresent ? <Check className="w-2.5 h-2.5 text-rose-400" /> : <Plus className="w-2.5 h-2.5 text-slate-500" />}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
             <div>
@@ -988,6 +1273,17 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
             </a>
           </div>
         </div>
+      )}
+
+      {/* Provider & Execution Agent Setup Modal */}
+      {isProviderModalOpen && (
+        <ProviderAgentSetupModal
+          isOpen={isProviderModalOpen}
+          onClose={() => setIsProviderModalOpen(false)}
+          settings={settings}
+          onUpdateSettings={onUpdateSettings || (() => {})}
+          initialTab="video"
+        />
       )}
     </div>
   );

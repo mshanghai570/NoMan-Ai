@@ -1,19 +1,27 @@
 import type { CustomModel, AspectRatio, MotionStyle } from '../types';
 
 export const DEFAULT_PRESET_MODELS: CustomModel[] = [
-  // Free Pollinations Models (No key required, unlimited)
+  // Flagship Cloud Photorealism Models (Closest to reality)
   {
-    id: 'flux',
-    name: 'FLUX.1 Schnell (Pollinations)',
-    description: 'Ultra-fast, state-of-the-art text-to-image with incredible prompt accuracy and lighting.',
-    provider: 'pollinations',
+    id: 'gemini-imagen-realism',
+    name: 'Gemini Photorealism (Google Cloud)',
+    description: 'Ultra-crisp commercial photography, authentic skin pores, and natural lighting via Google GenAI.',
+    provider: 'gemini',
     type: 'image',
     isCustom: false,
   },
   {
     id: 'flux-realism',
-    name: 'FLUX Realism Studio',
-    description: 'Fine-tuned specifically for commercial photography, real skin textures, and natural lighting.',
+    name: 'FLUX Ultra Realism Studio (Raw Photography)',
+    description: 'Fine-tuned specifically for commercial raw photography, natural depth of field, and eliminates plastic look.',
+    provider: 'pollinations',
+    type: 'image',
+    isCustom: false,
+  },
+  {
+    id: 'flux',
+    name: 'FLUX.1 Schnell (Pollinations Cloud)',
+    description: 'Ultra-fast, state-of-the-art text-to-image with incredible prompt accuracy and lighting.',
     provider: 'pollinations',
     type: 'image',
     isCustom: false,

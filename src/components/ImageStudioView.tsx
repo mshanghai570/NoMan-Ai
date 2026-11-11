@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { AspectRatio, CustomModel, GenerationItem, UserSettings, KeywordCategory } from '../types';
 import { ASPECT_RATIOS, STYLE_PRESETS } from '../constants/models';
 import { ImageGeneratorService } from '../services/imageGenerator';
+import { ProviderAgentSetupModal } from './ProviderAgentSetupModal';
 import {
   Sparkles,
   Wand2,
@@ -22,11 +23,19 @@ import {
   Plus,
   RefreshCw,
   X,
+  Cpu,
+  Cloud,
+  Server,
+  Shield,
+  ShieldCheck,
+  Sliders,
+  Settings2,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 
 interface ImageStudioViewProps {
   settings: UserSettings;
+  onUpdateSettings?: (newSettings: Partial<UserSettings>) => void;
   onSaveGeneration: (item: GenerationItem) => void;
   onSendToVideoLab: (imageUrl: string, prompt: string) => void;
   initialPrompt?: string;
@@ -35,14 +44,17 @@ interface ImageStudioViewProps {
 
 export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
   settings,
+  onUpdateSettings = () => {},
   onSaveGeneration,
   onSendToVideoLab,
   initialPrompt = '',
   initialNsfw = false,
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [negativePrompt, setNegativePrompt] = useState('');
-  const [selectedModelId, setSelectedModelId] = useState(settings.defaultModel || 'flux');
+  const [negativePrompt, setNegativePrompt] = useState(
+    'blurry, faded, washed out, low contrast, plastic skin, airbrush, cartoon, 3d render, deformed eyes, extra limbs, watermark, artifacts, low resolution'
+  );
+  const [selectedModelId, setSelectedModelId] = useState(settings.defaultModel || 'flux-realism');
   const [selectedRatio, setSelectedRatio] = useState<AspectRatio>(settings.defaultAspectRatio || '1:1');
   const [selectedStyle, setSelectedStyle] = useState('none');
   const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 99999999));
@@ -57,7 +69,59 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [nsfwRevealed, setNsfwRevealed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [forcedNsfw, setForcedNsfw] = useState(initialNsfw);
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
+  const [realismBoost, setRealismBoost] = useState(settings.realismBoost !== false);
+
+  // Quick photorealism negative tag definitions
+  const quickNegativeTags = [
+    { label: 'blurry', tag: 'blurry' },
+    { label: 'faded / washed out', tag: 'faded, washed out' },
+    { label: 'low contrast', tag: 'low contrast' },
+    { label: 'plastic skin', tag: 'plastic skin, airbrushed' },
+    { label: 'distorted anatomy', tag: 'bad anatomy, deformed' },
+    { label: 'bad eyes', tag: 'bad eyes, unnatural pupils' },
+    { label: 'extra limbs', tag: 'extra fingers, extra limbs' },
+    { label: 'low resolution', tag: 'low resolution, pixelated' },
+    { label: 'watermark & text', tag: 'watermark, text, signature' },
+    { label: 'cartoon / 3D', tag: 'cartoon, 3d render, anime' },
+  ];
+
+  const handleToggleNegativeTag = (tag: string) => {
+    haptic.trigger('selection');
+    const parts = tag.split(',').map((p) => p.trim());
+    const lowerNeg = negativePrompt.toLowerCase();
+    const hasTag = parts.some((p) => lowerNeg.includes(p.toLowerCase()));
+
+    if (hasTag) {
+      // Remove tag phrases
+      let updated = negativePrompt;
+      parts.forEach((p) => {
+        const regex = new RegExp(`(,\\s*)?${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}(,\\s*)?`, 'gi');
+        updated = updated.replace(regex, (m, p1, p2) => (p1 && p2 ? ', ' : ''));
+      });
+      setNegativePrompt(updated.trim().replace(/^,\s*|,\s*$/g, ''));
+    } else {
+      // Append tag
+      const trimmed = negativePrompt.trim();
+      if (!trimmed) {
+        setNegativePrompt(tag);
+      } else if (trimmed.endsWith(',')) {
+        setNegativePrompt(`${trimmed} ${tag}`);
+      } else {
+        setNegativePrompt(`${trimmed}, ${tag}`);
+      }
+    }
+  };
+
+  const handleApplyPhotorealismShield = () => {
+    haptic.trigger('success');
+    setNegativePrompt(
+      'blurry, faded, washed out, low contrast, plastic skin, airbrush, cartoon, 3d render, deformed eyes, extra limbs, watermark, artifacts, low resolution'
+    );
+    setRealismBoost(true);
+  };
 
   // Sync incoming initial prompt if transferred from Roleplay Chat or other tabs
   React.useEffect(() => {
@@ -204,11 +268,16 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
     haptic.trigger('impactHeavy');
     setIsGenerating(true);
     setErrorMessage(null);
+    setGenerationNotice(null);
     setIsSaved(false);
     setNsfwRevealed(false);
 
     // Apply style preset suffix
     let finalPrompt = prompt.trim();
+    if (realismBoost && selectedStyle === 'none' && !finalPrompt.toLowerCase().includes('shot on')) {
+      finalPrompt = `${finalPrompt}, 8k raw photography, shot on 35mm f/1.4 lens, natural dramatic lighting, ultra-detailed skin textures, sharp focus, masterpiece`;
+    }
+
     const styleObj = STYLE_PRESETS.find((s) => s.id === selectedStyle);
     if (styleObj && styleObj.promptSuffix) {
       finalPrompt = `${finalPrompt}, ${styleObj.promptSuffix}`;
@@ -237,8 +306,14 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
         steps,
         cfgScale,
         hfToken: settings.hfToken,
-        localEndpoint: settings.localEndpoint,
+        cloudApiKey: settings.cloudApiKey,
+        localEndpoint: settings.localEndpoint || settings.imageLocalEndpoint,
+        realismBoost,
       });
+
+      if (result.notice) {
+        setGenerationNotice(result.notice);
+      }
 
       const newItem: GenerationItem = {
         id: `gen_img_${Date.now()}`,
@@ -310,23 +385,53 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           </p>
         </div>
 
-        {/* Selected Model Pill */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="text-xs text-slate-400 font-mono">Model:</div>
-          <select
-            value={selectedModelId}
-            onChange={(e) => {
+        {/* Provider & Model Controls */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
               haptic.trigger('selection');
-              setSelectedModelId(e.target.value);
+              setIsProviderModalOpen(true);
             }}
-            className="text-xs bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500 font-medium"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500 text-xs text-slate-200 transition-all active:scale-95 shadow-sm"
+            title="Configure Generation Provider: Local Workstation vs Cloud APIs"
           >
-            {availableModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.provider})
-              </option>
-            ))}
-          </select>
+            {settings.imageExecutionMethod === 'local' ? (
+              <>
+                <Server className="w-3.5 h-3.5 text-violet-400" />
+                <span className="font-semibold text-violet-300">Local Agent</span>
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="font-semibold text-cyan-300">
+                  {settings.imageCloudProvider === 'gemini'
+                    ? 'Cloud · Gemini'
+                    : settings.imageCloudProvider === 'huggingface'
+                    ? 'Cloud · HF'
+                    : 'Cloud · FLUX'}
+                </span>
+              </>
+            )}
+            <Settings2 className="w-3 h-3 text-slate-400 ml-0.5" />
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedModelId}
+              onChange={(e) => {
+                haptic.trigger('selection');
+                setSelectedModelId(e.target.value);
+              }}
+              className="text-xs bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500 font-medium"
+            >
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -577,6 +682,79 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           </div>
         </div>
 
+        {/* Negative Prompt Section (What to Avoid / Exclude) */}
+        <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <label htmlFor="image-negative-prompt" className="flex items-center gap-1.5 text-xs font-semibold text-rose-300 uppercase tracking-wider">
+              <Shield className="w-3.5 h-3.5 text-rose-400" />
+              <span>Negative Prompt (What to Avoid / Eliminate)</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleApplyPhotorealismShield}
+                className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-950/70 px-2.5 py-1 rounded-lg border border-cyan-800/60 transition-all active:scale-95 shadow-sm"
+                title="Populate optimal photorealistic negative prompt to stop blurry or washed out renders"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Photorealism Shield</span>
+              </button>
+              {negativePrompt && (
+                <button
+                  type="button"
+                  onClick={() => setNegativePrompt('')}
+                  className="text-slate-500 hover:text-slate-300 text-[11px] px-1"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="relative">
+            <textarea
+              id="image-negative-prompt"
+              value={negativePrompt}
+              onChange={(e) => setNegativePrompt(e.target.value)}
+              placeholder="e.g. blurry, faded, washed out, low contrast, plastic skin, distorted anatomy, bad eyes, extra limbs, watermark..."
+              rows={2}
+              className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-xl p-3 text-xs border border-rose-950/60 focus:border-rose-400/80 focus:ring-1 focus:ring-rose-400/80 focus:outline-none resize-none transition-all font-mono"
+            />
+          </div>
+
+          {/* Quick Negative Filter Chips */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+              Quick Negative Filter Chips (Tap to Add / Remove):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {quickNegativeTags.map((item) => {
+                const firstWord = item.tag.split(',')[0].trim().toLowerCase();
+                const isPresent = negativePrompt.toLowerCase().includes(firstWord);
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => handleToggleNegativeTag(item.tag)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all flex items-center gap-1 active:scale-95 ${
+                      isPresent
+                        ? 'bg-rose-950/80 border border-rose-500/60 text-rose-200 shadow-sm'
+                        : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {isPresent ? (
+                      <Check className="w-2.5 h-2.5 text-rose-400 shrink-0" />
+                    ) : (
+                      <Plus className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                    )}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
         {/* Aspect Ratio Selector */}
         <div className="space-y-2 pt-2 border-t border-slate-800/80">
           <div className="flex items-center justify-between">
@@ -613,11 +791,29 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           </div>
         </div>
 
-        {/* Style Presets */}
+        {/* Style Presets & Photorealism Booster */}
         <div className="space-y-2 pt-2 border-t border-slate-800/80">
-          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-            Style Aesthetic
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              Style Aesthetic
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                haptic.trigger('selection');
+                setRealismBoost(!realismBoost);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                realismBoost
+                  ? 'bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 shadow-sm'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400'
+              }`}
+              title="Toggle Ultra-Realism Raw Photography injection"
+            >
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>Realism Booster: {realismBoost ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {STYLE_PRESETS.map((style) => {
               const isSelected = selectedStyle === style.id;
@@ -652,27 +848,13 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           >
             <span className="flex items-center gap-1.5">
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              Advanced Controls (Seed, Steps, Negative Prompt)
+              Advanced Generation Tuning (Seed, Steps, Guidance Scale)
             </span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
 
           {showAdvanced && (
             <div className="mt-3 space-y-3.5 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
-              {/* Negative Prompt */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  Negative Prompt (Elements to avoid)
-                </label>
-                <input
-                  type="text"
-                  value={negativePrompt}
-                  onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="e.g. blurry, distorted anatomy, low quality, artifacts"
-                  className="w-full bg-slate-900 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-cyan-400 focus:outline-none"
-                />
-              </div>
-
               {/* Seed Control */}
               <div className="flex items-center gap-3">
                 <div className="flex-1">
@@ -758,6 +940,17 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Routing Notice Banner */}
+      {generationNotice && (
+        <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-800/80 text-cyan-200 text-xs flex items-start gap-2.5 shadow-sm">
+          <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-cyan-300">Generation Routing Notice</p>
+            <p className="mt-0.5 text-slate-300">{generationNotice}</p>
+          </div>
+        </div>
+      )}
 
       {/* Error Banner */}
       {errorMessage && (
@@ -876,6 +1069,15 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Provider & Agent Setup Modal */}
+      <ProviderAgentSetupModal
+        isOpen={isProviderModalOpen}
+        onClose={() => setIsProviderModalOpen(false)}
+        settings={settings}
+        onUpdateSettings={onUpdateSettings}
+        initialTab="image"
+      />
     </div>
   );
 };

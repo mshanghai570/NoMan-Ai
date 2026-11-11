@@ -792,6 +792,132 @@ Strictly respond with JSON matching this structure:
     }
   }
 
+  // 1g. Gemini Direct Photorealistic Image Generation
+  if (url === '/api/gemini/generate-image' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { prompt, negativePrompt, aspectRatio = '1:1', apiKey } = body;
+
+      if (!prompt || typeof prompt !== 'string') {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Missing prompt parameter' }));
+        return true;
+      }
+
+      const ai = apiKey
+        ? new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } })
+        : getGeminiClient();
+
+      if (!ai) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          error: 'Gemini API key is not configured. Please add an API key in Provider Setup or Settings.',
+          needsKey: true,
+        }));
+        return true;
+      }
+
+      // Valid aspect ratios for gemini-3.1-flash-lite-image: "1:1", "3:4", "4:3", "9:16", "16:9"
+      const validRatios = ['1:1', '3:4', '4:3', '9:16', '16:9'];
+      const finalRatio = validRatios.includes(aspectRatio) ? aspectRatio : '1:1';
+
+      // Build guided prompt with photorealism cues and negative filtering instructions
+      let guidedPrompt = prompt.trim();
+      if (negativePrompt && negativePrompt.trim()) {
+        guidedPrompt += `\nStrictly avoid and eliminate these visual defects: ${negativePrompt.trim()}`;
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite-image',
+        contents: guidedPrompt,
+        config: {
+          imageConfig: {
+            aspectRatio: finalRatio as any,
+          },
+        },
+      });
+
+      let imageUrl: string | null = null;
+      for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+        if (part.inlineData?.data) {
+          const mime = part.inlineData.mimeType || 'image/png';
+          imageUrl = `data:${mime};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+
+      if (imageUrl) {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ imageUrl, provider: 'gemini' }));
+        return true;
+      }
+
+      throw new Error('No image was returned by Gemini image model');
+    } catch (err: any) {
+      console.error('Gemini image generation error:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err.message || 'Gemini image generation failed' }));
+      return true;
+    }
+  }
+
+  // 1h. Local / Custom Endpoint Health Check & Ping
+  if (url === '/api/check-endpoint' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const endpoint = (body?.endpoint || '').trim().replace(/\/$/, '');
+
+      if (!endpoint) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ reachable: false, error: 'Empty endpoint' }));
+        return true;
+      }
+
+      const start = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      try {
+        const pingResponse = await fetch(endpoint, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - start;
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          reachable: true,
+          status: pingResponse.status,
+          latencyMs,
+          endpoint,
+        }));
+        return true;
+      } catch (pingErr: any) {
+        clearTimeout(timeoutId);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          reachable: false,
+          error: pingErr.message || 'Connection refused or timed out',
+          endpoint,
+        }));
+        return true;
+      }
+    } catch (err: any) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ reachable: false, error: err.message }));
+      return true;
+    }
+  }
+
+  // 2. Hugging Face Inference Proxy
   if (url === '/api/hf/generate' && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
@@ -804,27 +930,37 @@ Strictly respond with JSON matching this structure:
         return true;
       }
 
-      // Hugging Face inference endpoint
-      const hfEndpoint = `https://api-inference.huggingface.co/models/${encodeURIComponent(modelId)}`;
+      // Hugging Face modern router + fallback to legacy inference endpoint
+      const routerEndpoint = `https://router.huggingface.co/hf-inference/models/${encodeURIComponent(modelId)}`;
+      const legacyEndpoint = `https://api-inference.huggingface.co/models/${encodeURIComponent(modelId)}`;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      if (token && token.trim()) {
+        headers['Authorization'] = `Bearer ${token.trim()}`;
       }
 
-      const hfResponse = await fetch(hfEndpoint, {
+      let hfResponse = await fetch(routerEndpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({ inputs, parameters: parameters || {} }),
       });
 
+      if (!hfResponse.ok && (hfResponse.status === 404 || hfResponse.status === 502)) {
+        // Fallback to legacy endpoint
+        hfResponse = await fetch(legacyEndpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ inputs, parameters: parameters || {} }),
+        });
+      }
+
       if (!hfResponse.ok) {
         const errorText = await hfResponse.text();
         res.statusCode = hfResponse.status;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: errorText || `HF error ${hfResponse.status}` }));
+        res.end(JSON.stringify({ error: errorText || `HF error ${hfResponse.status}`, status: hfResponse.status }));
         return true;
       }
 

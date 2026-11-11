@@ -23,6 +23,10 @@ import {
   User,
   Compass,
   FileCode,
+  Cloud,
+  Video,
+  Image as ImageIcon,
+  Settings2,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 import { AgeGateModal } from './AgeGateModal';
@@ -31,6 +35,7 @@ import { BUILTIN_THEMES } from '../constants/themes';
 import { CURATED_FONTS } from '../constants/fonts';
 import { loadGoogleFont } from '../utils/themeManager';
 import type { FontSizeScale } from '../types';
+import { ProviderAgentSetupModal } from './ProviderAgentSetupModal';
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -48,6 +53,61 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showChatAgeGate, setShowChatAgeGate] = useState(false);
   const [chatKeyDraft, setChatKeyDraft] = useState(settings.chatApiKey || '');
   const [chatKeySaved, setChatKeySaved] = useState(false);
+
+  // Provider Studio modal & draft settings
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
+  const [cloudKeyDraft, setCloudKeyDraft] = useState(settings.cloudApiKey || '');
+  const [cloudKeySaved, setCloudKeySaved] = useState(false);
+  const [imageEndpointDraft, setImageEndpointDraft] = useState(settings.imageLocalEndpoint || 'http://localhost:8188');
+  const [videoEndpointDraft, setVideoEndpointDraft] = useState(settings.videoLocalEndpoint || 'http://localhost:8188');
+  const [isTestingImage, setIsTestingImage] = useState(false);
+  const [imageTestMessage, setImageTestMessage] = useState<string | null>(null);
+  const [imageTestSuccess, setImageTestSuccess] = useState<boolean | null>(null);
+  const [isTestingVideo, setIsTestingVideo] = useState(false);
+  const [videoTestMessage, setVideoTestMessage] = useState<string | null>(null);
+  const [videoTestSuccess, setVideoTestSuccess] = useState<boolean | null>(null);
+
+  const handleTestEndpoint = async (type: 'image' | 'video', url: string) => {
+    if (type === 'image') {
+      setIsTestingImage(true);
+      setImageTestMessage(null);
+    } else {
+      setIsTestingVideo(true);
+      setVideoTestMessage(null);
+    }
+    try {
+      const res = await fetch('/api/check-endpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json();
+      if (type === 'image') {
+        setImageTestSuccess(data.ok);
+        setImageTestMessage(data.ok ? `Connected! Latency: ${data.latencyMs}ms` : `Offline: ${data.message}`);
+        if (data.ok) {
+          onUpdateSettings({ imageLocalEndpoint: url.trim() });
+        }
+      } else {
+        setVideoTestSuccess(data.ok);
+        setVideoTestMessage(data.ok ? `Connected! Latency: ${data.latencyMs}ms` : `Offline: ${data.message}`);
+        if (data.ok) {
+          onUpdateSettings({ videoLocalEndpoint: url.trim() });
+        }
+      }
+    } catch (e: any) {
+      if (type === 'image') {
+        setImageTestSuccess(false);
+        setImageTestMessage(`Connection failed: ${e.message}`);
+      } else {
+        setVideoTestSuccess(false);
+        setVideoTestMessage(`Connection failed: ${e.message}`);
+      }
+    } finally {
+      if (type === 'image') setIsTestingImage(false);
+      else setIsTestingVideo(false);
+    }
+  };
 
   // Kilo AI Gateway draft state
   const [kiloKeyDraft, setKiloKeyDraft] = useState(settings.kiloApiKey || '');
@@ -188,6 +248,317 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <p className="text-xs text-slate-400 mt-1">
           Configure content filters, manage custom Hugging Face model endpoints, and tune generation defaults.
         </p>
+      </div>
+
+      {/* 0. Generation Providers & Execution Agents (Local vs Cloud) */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-cyan-500/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4 text-cyan-400" />
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Generation Providers & Execution Agents</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60">
+                  Local vs Cloud
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Choose between running generations locally (ComfyUI / SD-WebUI / Ollama / WebGPU) or high-speed Cloud APIs with ultra-realism.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              haptic.trigger('selection');
+              setIsProviderModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs transition-all active:scale-95 shadow-sm self-start sm:self-auto shrink-0"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            <span>Open Provider Studio</span>
+          </button>
+        </div>
+
+        {/* Realism Booster Feature Switch */}
+        <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-950/40 via-violet-950/30 to-slate-900 border border-cyan-500/30 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <div>
+              <span className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                <span>Ultra-Photorealism Engine Boost</span>
+                <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60">
+                  Fixes Blurry & Faded Output
+                </span>
+              </span>
+              <p className="text-[10px] text-slate-400">
+                Applies raw camera optics (8k uhd, 35mm lens, sharp focus) and filters out washed-out, plastic, or blurry generation artifacts.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.realismBoost !== false}
+            onClick={() => {
+              haptic.trigger('selection');
+              onUpdateSettings({ realismBoost: settings.realismBoost === false });
+            }}
+            className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ml-3 ${
+              settings.realismBoost !== false ? 'bg-cyan-500' : 'bg-slate-800'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                settings.realismBoost !== false ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Image & Video Tabs Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Image Generation Provider Card */}
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                Image Generation Agent
+              </span>
+              <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ imageExecutionMethod: 'cloud' });
+                  }}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                    (settings.imageExecutionMethod || 'cloud') === 'cloud'
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Cloud className="w-3 h-3" />
+                  Cloud
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ imageExecutionMethod: 'local' });
+                  }}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                    settings.imageExecutionMethod === 'local'
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Server className="w-3 h-3" />
+                  Local
+                </button>
+              </div>
+            </div>
+
+            {(settings.imageExecutionMethod || 'cloud') === 'cloud' ? (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-medium text-slate-400">Cloud Image Provider</label>
+                <select
+                  value={settings.imageCloudProvider || 'gemini'}
+                  onChange={(e) => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ imageCloudProvider: e.target.value as any });
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                >
+                  <option value="gemini">Gemini 3.1 Cloud (Ultra-Photorealism & Crisp Focus)</option>
+                  <option value="pollinations">FLUX Ultra-Realism (Enhanced Raw Photography)</option>
+                  <option value="huggingface">Hugging Face Inference Router (Open Weights)</option>
+                </select>
+
+                <div className="pt-1">
+                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                    Cloud API Key (Optional / Overrides Server Key)
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="password"
+                      value={cloudKeyDraft}
+                      onChange={(e) => setCloudKeyDraft(e.target.value)}
+                      placeholder="AIzaSy... or custom key"
+                      className="flex-1 bg-slate-950 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-800 focus:border-cyan-400 focus:outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        haptic.trigger('success');
+                        onUpdateSettings({ cloudApiKey: cloudKeyDraft.trim() });
+                        setCloudKeySaved(true);
+                        setTimeout(() => setCloudKeySaved(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold shrink-0"
+                    >
+                      {cloudKeySaved ? <Check className="w-3 h-3 text-emerald-400" /> : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-medium text-slate-400">Local Workstation Provider</label>
+                <select
+                  value={settings.imageLocalProvider || 'comfyui'}
+                  onChange={(e) => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ imageLocalProvider: e.target.value as any });
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                >
+                  <option value="comfyui">ComfyUI Local Server (Workflow Port 8188)</option>
+                  <option value="sd-webui">Stable Diffusion WebUI / Forge (Port 7860)</option>
+                  <option value="ollama">Ollama Local Vision Engine (Port 11434)</option>
+                  <option value="webgpu">In-Browser Local WebGPU Engine</option>
+                </select>
+
+                {settings.imageLocalProvider !== 'webgpu' && (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-medium text-slate-400">Local Endpoint URL</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={imageEndpointDraft}
+                        onChange={(e) => setImageEndpointDraft(e.target.value)}
+                        placeholder="http://localhost:8188"
+                        className="flex-1 bg-slate-950 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-800 focus:border-cyan-400 focus:outline-none font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleTestEndpoint('image', imageEndpointDraft)}
+                        disabled={isTestingImage}
+                        className="px-2.5 py-1.5 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-300 hover:bg-cyan-900 text-xs font-semibold shrink-0"
+                      >
+                        {isTestingImage ? 'Pinging...' : 'Test'}
+                      </button>
+                    </div>
+                    {imageTestMessage && (
+                      <p className={`text-[10px] mt-1 ${imageTestSuccess ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {imageTestMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Video Generation Provider Card */}
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Video className="w-3.5 h-3.5 text-violet-400" />
+                Video Generation Agent
+              </span>
+              <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ videoExecutionMethod: 'cloud' });
+                  }}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                    (settings.videoExecutionMethod || 'cloud') === 'cloud'
+                      ? 'bg-violet-500 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Cloud className="w-3 h-3" />
+                  Cloud
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ videoExecutionMethod: 'local' });
+                  }}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                    settings.videoExecutionMethod === 'local'
+                      ? 'bg-violet-500 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Server className="w-3 h-3" />
+                  Local
+                </button>
+              </div>
+            </div>
+
+            {(settings.videoExecutionMethod || 'cloud') === 'cloud' ? (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-medium text-slate-400">Cloud Video Provider</label>
+                <select
+                  value={settings.videoCloudProvider || 'pollinations'}
+                  onChange={(e) => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ videoCloudProvider: e.target.value as any });
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                >
+                  <option value="pollinations">NoMan 60fps Dynamic Motion Engine</option>
+                  <option value="gemini">Gemini Cinematic Video Synthesis</option>
+                  <option value="huggingface">Hugging Face Stable Video Diffusion (SVD)</option>
+                </select>
+
+                <p className="text-[10px] text-slate-500 pt-1">
+                  Processes smooth 30-60 FPS camera motion paths, extensions, and temporal frame interpolation in high fidelity.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-medium text-slate-400">Local Workstation Video Provider</label>
+                <select
+                  value={settings.videoLocalProvider || 'comfyui'}
+                  onChange={(e) => {
+                    haptic.trigger('selection');
+                    onUpdateSettings({ videoLocalProvider: e.target.value as any });
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                >
+                  <option value="comfyui">ComfyUI AnimateDiff Video Pipeline</option>
+                  <option value="sd-webui">SD-WebUI AnimateDiff Extension</option>
+                  <option value="webgpu">In-Browser Local WebGPU Video Shader</option>
+                </select>
+
+                {settings.videoLocalProvider !== 'webgpu' && (
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-medium text-slate-400">Local Endpoint URL</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={videoEndpointDraft}
+                        onChange={(e) => setVideoEndpointDraft(e.target.value)}
+                        placeholder="http://localhost:8188"
+                        className="flex-1 bg-slate-950 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleTestEndpoint('video', videoEndpointDraft)}
+                        disabled={isTestingVideo}
+                        className="px-2.5 py-1.5 rounded-lg bg-violet-950 border border-violet-800 text-violet-300 hover:bg-violet-900 text-xs font-semibold shrink-0"
+                      >
+                        {isTestingVideo ? 'Pinging...' : 'Test'}
+                      </button>
+                    </div>
+                    {videoTestMessage && (
+                      <p className={`text-[10px] mt-1 ${videoTestSuccess ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {videoTestMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 1. NSFW Content Filter Toggle (Explicit user requirement) */}
@@ -1125,6 +1496,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onClose={() => setShowChatAgeGate(false)}
         onConfirm={handleConfirmChatAge}
       />
+
+      {/* Provider & Execution Agent Setup Modal */}
+      {isProviderModalOpen && (
+        <ProviderAgentSetupModal
+          isOpen={isProviderModalOpen}
+          onClose={() => setIsProviderModalOpen(false)}
+          settings={settings}
+          onUpdateSettings={onUpdateSettings}
+          initialTab="image"
+        />
+      )}
     </div>
   );
 };
