@@ -19,7 +19,9 @@ export type NsfwMode = 'safe' | 'warn' | 'unrestricted';
 export type ChatNsfwMode = 'sfw' | 'nsfw';
 
 /** Provider used for roleplay chat and memory/scene extraction. */
-export type ChatProvider = 'gemini' | 'ollama' | 'openai' | 'webllm';
+export type ChatProvider = 'gemini' | 'kilo' | 'ollama' | 'openai' | 'webllm';
+
+export type AgentMode = 'character' | 'narrator' | 'dual' | 'game-master' | 'custom';
 
 export type ChatReplyLength = 'short' | 'medium' | 'long';
 
@@ -30,6 +32,8 @@ export interface RoleplayEngineConfig {
   apiKey: string;
   temperature: number;
   replyLength: ChatReplyLength;
+  agentMode?: AgentMode;
+  customAgentPrompt?: string;
   /** Local model to retry with when the primary provider fails. */
   fallback?: {
     enabled: boolean;
@@ -150,6 +154,10 @@ export interface UserSettings {
   chatApiKey: string;
   chatTemperature: number;
   chatReplyLength: ChatReplyLength;
+  /** Kilo-style Agent Mode: character, narrator, dual, game-master, custom */
+  agentMode?: AgentMode;
+  customAgentPrompt?: string;
+  kiloApiKey?: string;
   /**
    * Fallback target used when the primary provider fails before producing any
    * text (no key, no credits, rate limit, endpoint down). Keeps the app usable
@@ -250,6 +258,8 @@ export interface RoleplayPersona {
   voiceStyle?: string;
   /** Visual world/genre style used by the image engine. */
   worldStyle?: string;
+  agentMode?: AgentMode;
+  customAgentPrompt?: string;
   isCustom?: boolean;
 }
 

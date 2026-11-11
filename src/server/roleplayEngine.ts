@@ -52,12 +52,14 @@ export interface RoleplayRequest {
 
 const DEFAULT_MODELS: Record<ServerChatProvider, string> = {
   gemini: 'gemini-3.8-flash',
+  kilo: 'kilo-auto/free',
   ollama: 'llama3.2',
   openai: 'openai/gpt-4o-mini',
 };
 
 const DEFAULT_ENDPOINTS: Record<ServerChatProvider, string> = {
   gemini: '',
+  kilo: 'https://ai-gateway.kilo.ai/api/v1',
   ollama: 'http://localhost:11434',
   openai: 'https://openrouter.ai/api/v1',
 };
@@ -84,7 +86,9 @@ const getGeminiClient = (apiKey?: string) => {
 const resolveConfig = (input?: Partial<EngineConfig>): EngineConfig => {
   if (input?.provider) assertServerChatProvider(input.provider);
   const provider: ServerChatProvider =
-    input?.provider === 'ollama' || input?.provider === 'openai' ? input.provider : 'gemini';
+    input?.provider === 'kilo' || input?.provider === 'ollama' || input?.provider === 'openai'
+      ? input.provider
+      : 'gemini';
   return {
     provider,
     model: input?.model?.trim() || DEFAULT_MODELS[provider],
@@ -95,6 +99,8 @@ const resolveConfig = (input?: Partial<EngineConfig>): EngineConfig => {
         ? Math.min(1.3, Math.max(0.2, input.temperature))
         : 0.9,
     replyLength: input?.replyLength || 'medium',
+    agentMode: input?.agentMode,
+    customAgentPrompt: input?.customAgentPrompt,
   };
 };
 
@@ -107,10 +113,18 @@ const ollamaChatUrl = (endpoint?: string) => {
 };
 
 export const buildSystemInstruction = (req: RoleplayRequest): string =>
-  buildRoleplaySystemInstruction(req);
+  buildRoleplaySystemInstruction({
+    ...req,
+    agentMode: req.config?.agentMode || req.persona.agentMode,
+    customAgentPrompt: req.config?.customAgentPrompt || req.persona.customAgentPrompt,
+  });
 
 const buildProviderMessages = (req: RoleplayRequest): RoleplayPromptMessage[] =>
-  buildRoleplayMessages(req);
+  buildRoleplayMessages({
+    ...req,
+    agentMode: req.config?.agentMode || req.persona.agentMode,
+    customAgentPrompt: req.config?.customAgentPrompt || req.persona.customAgentPrompt,
+  });
 
 const toGeminiContents = (messages: RoleplayPromptMessage[]) => {
   const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
@@ -293,7 +307,7 @@ export async function* streamChat(
     yield* streamOllama(req, config, signal);
     return;
   }
-  if (config.provider === 'openai') {
+  if (config.provider === 'openai' || config.provider === 'kilo') {
     yield* streamOpenAI(req, config, signal);
     return;
   }
@@ -337,8 +351,9 @@ async function completeJson(
     return data?.message?.content || data?.response || '';
   }
 
-  if (config.provider === 'openai') {
-    const base = normalizeEndpoint(config.endpoint || DEFAULT_ENDPOINTS.openai);
+  if (config.provider === 'openai' || config.provider === 'kilo') {
+    const defaultEndpoint = config.provider === 'kilo' ? DEFAULT_ENDPOINTS.kilo : DEFAULT_ENDPOINTS.openai;
+    const base = normalizeEndpoint(config.endpoint || defaultEndpoint);
     const url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;

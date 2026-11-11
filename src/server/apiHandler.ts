@@ -486,9 +486,12 @@ Output strictly valid JSON with this exact shape:
 
   // 1b-2. Gemini AI Theme & Font Generator
   if (url === '/api/gemini/generate-theme' && req.method === 'POST') {
+    let prompt = '';
+    let apiKey: string | undefined;
     try {
       const body = await parseJsonBody(req);
-      const { prompt = '', apiKey } = body;
+      prompt = body?.prompt || '';
+      apiKey = body?.apiKey;
 
       if (!prompt || typeof prompt !== 'string') {
         res.statusCode = 400;
@@ -498,7 +501,7 @@ Output strictly valid JSON with this exact shape:
       }
 
       // Check if user provided custom API key or use system environment key
-      let ai = apiKey
+      const ai = apiKey
         ? new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } })
         : getGeminiClient();
 
@@ -541,7 +544,7 @@ Strictly respond with JSON matching this structure:
   "borderRadius": string ("none" | "sm" | "md" | "lg" | "xl" | "2xl" | "full")
 }`;
 
-      const response = await ai.models.generateContent({
+      const geminiCall = ai.models.generateContent({
         model: 'gemini-3.8-flash',
         contents: `Theme Concept Prompt: "${prompt}"`,
         config: {
@@ -553,11 +556,16 @@ Strictly respond with JSON matching this structure:
         },
       });
 
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
+      );
+
+      const response = await Promise.race([geminiCall, timeoutPromise]);
       const rawText = (response.text || '{}').trim();
       let parsedTheme: any = {};
       try {
         parsedTheme = JSON.parse(rawText);
-      } catch (parseErr) {
+      } catch {
         parsedTheme = synthesizeThemeFromPrompt(prompt);
       }
 
@@ -577,19 +585,10 @@ Strictly respond with JSON matching this structure:
       return true;
     } catch (err: any) {
       console.warn('Gemini theme generation fallback:', err?.message);
-      // Seamlessly fall back to algorithmic synthesizer
-      try {
-        const body = await parseJsonBody(req).catch(() => ({}));
-        const theme = synthesizeThemeFromPrompt(body.prompt || 'Cyberpunk');
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ theme, source: 'synthesizer' }));
-      } catch {
-        const theme = synthesizeThemeFromPrompt('Studio');
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ theme, source: 'synthesizer' }));
-      }
+      const fallbackTheme = synthesizeThemeFromPrompt(prompt || 'Cyberpunk');
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ theme: fallbackTheme, source: 'synthesizer' }));
       return true;
     }
   }

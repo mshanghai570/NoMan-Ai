@@ -9,6 +9,8 @@ export interface RoleplayPromptInput {
   userMessage: string;
   nsfw?: boolean;
   replyLength?: ChatReplyLength;
+  agentMode?: import('../types').AgentMode;
+  customAgentPrompt?: string;
 }
 
 export interface RoleplayPromptMessage {
@@ -96,7 +98,27 @@ ${avoid.length ? `RECENT OPENINGS TO AVOID (do not reuse):\n${avoid.map((line) =
 CONTENT BOUNDARIES:
 - All characters are adults. No minors, sexual violence, or real identifiable people.`;
 
-  return [identity, memoryBlock, craft, input.nsfw ? mature : sfw]
+  const mode = input.agentMode || persona.agentMode || 'character';
+  let modeBlock = '';
+
+  if (mode === 'narrator') {
+    modeBlock = `AGENT MODE: MASTER NARRATOR & STORYTELLER
+- You are the omniscient literary narrator of this story and world.
+- Describe scenes with rich atmospheric sensory prose, environmental changes, tension, and secondary characters.
+- Quote dialogue for ${persona.name} and other figures when spoken, but prioritize setting the scene and driving the narrative.`;
+  } else if (mode === 'dual') {
+    modeBlock = `AGENT MODE: DUAL NARRATOR + CHARACTER
+- Seamlessly blend literary third-person narrative descriptions of the environment, action, and world with direct spoken dialogue and reactions from ${persona.name}.`;
+  } else if (mode === 'game-master') {
+    modeBlock = `AGENT MODE: GAME MASTER / DIRECTOR
+- Act as the interactive Game Master (DM).
+- Describe immediate environmental changes, track stakes, and challenge the user with choices or obstacles.
+- Conclude turns with subtle, engaging prompts asking what the user attempts or says next.`;
+  } else if (mode === 'custom' && (input.customAgentPrompt || persona.customAgentPrompt)) {
+    modeBlock = `CUSTOM AGENT DIRECTIVES:\n${input.customAgentPrompt || persona.customAgentPrompt}`;
+  }
+
+  return [identity, modeBlock, memoryBlock, craft, input.nsfw ? mature : sfw]
     .filter(Boolean)
     .join('\n\n');
 };

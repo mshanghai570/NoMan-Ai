@@ -21,6 +21,15 @@ export const CHAT_PROVIDER_PRESETS: Record<ChatProvider, ChatProviderPreset> = {
     requiresKey: false,
     hint: 'Runs through the app server with GEMINI_API_KEY. Strong prose, but Google policy still filters explicit content.',
   },
+  kilo: {
+    id: 'kilo',
+    label: 'Kilo AI Gateway (Free & Open Models)',
+    shortLabel: 'Kilo Gateway',
+    model: 'kilo-auto/free',
+    endpoint: 'https://ai-gateway.kilo.ai/api/v1',
+    requiresKey: false,
+    hint: 'Kilo Gateway provides free models (Auto Free tier, Llama 3.3, DeepSeek) and custom agent modes (Character, Narrator, DM).',
+  },
   ollama: {
     id: 'ollama',
     label: 'Ollama / Local model',
@@ -51,10 +60,77 @@ export const CHAT_PROVIDER_PRESETS: Record<ChatProvider, ChatProviderPreset> = {
 };
 
 export const CHAT_PROVIDERS: ChatProviderPreset[] = [
+  CHAT_PROVIDER_PRESETS.kilo,
   CHAT_PROVIDER_PRESETS.gemini,
   CHAT_PROVIDER_PRESETS.ollama,
   CHAT_PROVIDER_PRESETS.openai,
   CHAT_PROVIDER_PRESETS.webllm,
+];
+
+export const KILO_FREE_MODELS = [
+  {
+    id: 'kilo-auto/free',
+    name: 'Auto Free (Best Free Tier)',
+    description: 'Auto-routes requests to the best available free model on Kilo Gateway.',
+  },
+  {
+    id: 'meta-llama/llama-3.3-70b-instruct:free',
+    name: 'Llama 3.3 70B Instruct (Free)',
+    description: 'Flagship open weights model with rich narrative prose and dialogue.',
+  },
+  {
+    id: 'deepseek/deepseek-chat:free',
+    name: 'DeepSeek V3 / Chat (Free)',
+    description: 'Exceptional creative writing, character immersion, and reasoning.',
+  },
+  {
+    id: 'nvidia/llama-3.1-nemotron-70b-instruct:free',
+    name: 'Nemotron 70B (Free)',
+    description: 'NVIDIA conversational model fine-tuned for nuanced human interaction.',
+  },
+  {
+    id: 'qwen/qwen-2.5-72b-instruct:free',
+    name: 'Qwen 2.5 72B (Free)',
+    description: 'Vast knowledge base and high context window for deep storytelling.',
+  },
+];
+
+export const AGENT_MODES: Array<{
+  id: import('../types').AgentMode;
+  name: string;
+  tagline: string;
+  description: string;
+}> = [
+  {
+    id: 'character',
+    name: 'Character Mode',
+    tagline: 'Direct Persona',
+    description: 'Speaks and acts strictly as the persona with emotional depth and sensory cues.',
+  },
+  {
+    id: 'narrator',
+    name: 'Narrator / Storyteller',
+    tagline: 'Literary World Narrator',
+    description: 'Acts as an omniscient literary narrator setting scenes, atmospheric detail, and pacing.',
+  },
+  {
+    id: 'dual',
+    name: 'Dual Mode',
+    tagline: 'Narrator + Character',
+    description: 'Blends atmospheric third-person scene narration with direct spoken dialogue from the character.',
+  },
+  {
+    id: 'game-master',
+    name: 'Game Master / Director',
+    tagline: 'Interactive DM',
+    description: 'Directs the narrative, creates tactical choices and dilemmas, and prompts your next move.',
+  },
+  {
+    id: 'custom',
+    name: 'Custom Agent Mode',
+    tagline: 'Tailored System Directives',
+    description: 'Configure your own custom instructions, style rules, and agent behavior.',
+  },
 ];
 
 export const REPLY_LENGTHS: Array<{

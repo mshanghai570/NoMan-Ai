@@ -42,9 +42,21 @@ const LOCAL_REPLY_MAX_TOKENS: Record<ChatReplyLength, number> = {
 
 export const buildEngineConfig = (settings: UserSettings): RoleplayEngineConfig => ({
   provider: settings.chatProvider || 'gemini',
-  model: settings.chatModel || 'gemini-3.8-flash',
-  endpoint: settings.chatEndpoint || '',
-  apiKey: settings.chatApiKey || '',
+  model:
+    settings.chatModel ||
+    (settings.chatProvider === 'kilo'
+      ? 'kilo-auto/free'
+      : settings.chatProvider === 'ollama'
+      ? 'llama3.2'
+      : 'gemini-3.8-flash'),
+  endpoint:
+    settings.chatEndpoint ||
+    (settings.chatProvider === 'kilo' ? 'https://ai-gateway.kilo.ai/api/v1' : ''),
+  apiKey:
+    settings.chatApiKey ||
+    (settings.chatProvider === 'kilo' ? settings.kiloApiKey || '' : ''),
+  agentMode: settings.agentMode || 'character',
+  customAgentPrompt: settings.customAgentPrompt || '',
   temperature:
     typeof settings.chatTemperature === 'number' ? settings.chatTemperature : 0.9,
   replyLength: settings.chatReplyLength || 'medium',
@@ -108,6 +120,8 @@ export const streamRoleplayReply = async ({
       userMessage,
       nsfw,
       replyLength: config.replyLength,
+      agentMode: config.agentMode,
+      customAgentPrompt: config.customAgentPrompt,
     });
     let fullText = '';
 
@@ -141,6 +155,8 @@ export const streamRoleplayReply = async ({
       userMessage: recent[recent.length - 1]?.content || '',
       nsfw,
       replyLength: config.replyLength,
+      agentMode: config.agentMode,
+      customAgentPrompt: config.customAgentPrompt,
       config,
     }),
     signal,

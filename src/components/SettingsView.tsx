@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import type { ChatProvider, ChatReplyLength, CustomModel, NsfwMode, UserSettings } from '../types';
-import { CHAT_PROVIDERS, CHAT_PROVIDER_PRESETS, REPLY_LENGTHS } from '../constants/chat';
+import type { AgentMode, ChatProvider, ChatReplyLength, CustomModel, NsfwMode, UserSettings } from '../types';
+import { AGENT_MODES, CHAT_PROVIDERS, CHAT_PROVIDER_PRESETS, KILO_FREE_MODELS, REPLY_LENGTHS } from '../constants/chat';
 import {
   Sliders,
   Shield,
@@ -19,6 +19,10 @@ import {
   Flame,
   Gauge,
   Server,
+  BookOpen,
+  User,
+  Compass,
+  FileCode,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 import { AgeGateModal } from './AgeGateModal';
@@ -44,6 +48,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showChatAgeGate, setShowChatAgeGate] = useState(false);
   const [chatKeyDraft, setChatKeyDraft] = useState(settings.chatApiKey || '');
   const [chatKeySaved, setChatKeySaved] = useState(false);
+
+  // Kilo AI Gateway draft state
+  const [kiloKeyDraft, setKiloKeyDraft] = useState(settings.kiloApiKey || '');
+  const [kiloKeySaved, setKiloKeySaved] = useState(false);
+
+  // Custom agent prompt draft state
+  const [customAgentPromptDraft, setCustomAgentPromptDraft] = useState(
+    settings.customAgentPrompt || ''
+  );
+  const [customPromptSaved, setCustomPromptSaved] = useState(false);
 
   // New custom model form state
   const [showAddModel, setShowAddModel] = useState(false);
@@ -87,9 +101,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       chatProvider: provider,
       chatModel: preset.model,
       chatEndpoint: preset.endpoint,
-      chatApiKey: '',
+      chatApiKey: provider === 'kilo' ? (settings.kiloApiKey || '') : '',
     });
-    setChatKeyDraft('');
+    setChatKeyDraft(provider === 'kilo' ? (settings.kiloApiKey || '') : '');
   };
 
   const handleSaveChatKey = () => {
@@ -97,6 +111,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onUpdateSettings({ chatApiKey: chatKeyDraft.trim() });
     setChatKeySaved(true);
     setTimeout(() => setChatKeySaved(false), 2000);
+  };
+
+  const handleSaveKiloKey = () => {
+    haptic.trigger('success');
+    onUpdateSettings({ kiloApiKey: kiloKeyDraft.trim() });
+    setKiloKeySaved(true);
+    setTimeout(() => setKiloKeySaved(false), 2000);
+  };
+
+  const handleAgentModeChange = (mode: AgentMode) => {
+    haptic.trigger('selection');
+    onUpdateSettings({ agentMode: mode });
+  };
+
+  const handleSaveCustomAgentPrompt = () => {
+    haptic.trigger('success');
+    onUpdateSettings({ customAgentPrompt: customAgentPromptDraft.trim() });
+    setCustomPromptSaved(true);
+    setTimeout(() => setCustomPromptSaved(false), 2000);
   };
 
   const handleReplyLengthChange = (length: ChatReplyLength) => {
@@ -308,7 +341,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
             Provider
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             {CHAT_PROVIDERS.map((preset) => {
               const selected = settings.chatProvider === preset.id;
               return (
@@ -329,7 +362,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span className="text-xs font-bold">{preset.shortLabel}</span>
                   </span>
                   <span className="block text-[10px] text-slate-400 mt-1 leading-snug">
-                    {preset.id === 'gemini'
+                    {preset.id === 'kilo'
+                      ? 'Free models & Agent Modes'
+                      : preset.id === 'gemini'
                       ? 'Server key, strongest prose'
                       : preset.id === 'ollama'
                       ? 'Local & uncensored'
@@ -346,10 +381,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </p>
         </div>
 
+        {/* Kilo Gateway Free Models Catalog & Key */}
+        {settings.chatProvider === 'kilo' && (
+          <div className="p-4 rounded-xl bg-violet-950/20 border border-violet-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-violet-300 flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                <span>Kilo Free Models Catalog</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                100% Free Tier
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Select one of Kilo Gateway's completely free, uncensored models optimized for character roleplay and dialogue:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {KILO_FREE_MODELS.map((model) => {
+                const isSelected = settings.chatModel === model.id;
+                return (
+                  <button
+                    key={model.id}
+                    type="button"
+                    onClick={() => {
+                      haptic.trigger('selection');
+                      onUpdateSettings({ chatModel: model.id });
+                    }}
+                    className={`p-2.5 rounded-lg border text-left transition-all ${
+                      isSelected
+                        ? 'bg-violet-900/50 border-violet-400 text-white shadow-sm'
+                        : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold truncate text-slate-200">
+                        {model.name}
+                      </span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
+                    </div>
+                    <p className="text-[10px] text-slate-400 line-clamp-2">
+                      {model.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-violet-500/20 space-y-1.5">
+              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-violet-400" />
+                <span>Kilo API Key (Optional)</span>
+              </span>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={kiloKeyDraft}
+                  onChange={(e) => setKiloKeyDraft(e.target.value)}
+                  placeholder="kilo_... (leave empty to use standard free gateway routing)"
+                  className="flex-1 bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveKiloKey}
+                  className="px-3.5 py-2 rounded-lg bg-violet-900 hover:bg-violet-800 text-white text-xs font-semibold flex items-center gap-1 transition-all"
+                >
+                  {kiloKeySaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : null}
+                  <span>{kiloKeySaved ? 'Saved' : 'Save Key'}</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Kilo auto-free models require no key. If you have an account or custom quota token from Kilo Code, paste it here.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-              {settings.chatProvider === 'webllm' ? 'Model (read-only)' : 'Model'}
+              {settings.chatProvider === 'webllm' ? 'Model (read-only)' : 'Model ID'}
             </label>
             <input
               type="text"
@@ -385,6 +496,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 onChange={(e) => onUpdateSettings({ chatEndpoint: e.target.value })}
                 placeholder={CHAT_PROVIDER_PRESETS[settings.chatProvider]?.endpoint}
                 className="w-full bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Agent Modes Configuration */}
+        <div className="pt-3 border-t border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="block text-[11px] font-semibold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
+              <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Roleplay Agent Mode</span>
+            </label>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-slate-700">
+              {AGENT_MODES.find((m) => m.id === (settings.agentMode || 'character'))?.name || 'Character Mode'}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Just like Kilo custom agent modes, adjust how the model acts — as a direct character, omniscient world narrator, dual storyteller, or interactive Game Master (DM):
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {AGENT_MODES.map((mode) => {
+              const isSelected = (settings.agentMode || 'character') === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => handleAgentModeChange(mode.id)}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    isSelected
+                      ? 'bg-cyan-950/40 border-cyan-400 text-white shadow-sm'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-200">{mode.name}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                  </div>
+                  <span className="text-[10px] font-mono text-cyan-400 block mb-1">
+                    {mode.tagline}
+                  </span>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    {mode.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          {settings.agentMode === 'custom' && (
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Custom Agent Directives & Prompt Template</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomAgentPrompt}
+                  className="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1 transition-all"
+                >
+                  {customPromptSaved ? <Check className="w-3 h-3 text-slate-950" /> : null}
+                  <span>{customPromptSaved ? 'Saved' : 'Save Directives'}</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Write tailored guidelines for this agent (narrative perspective, dialect, pacing rules, world facts):
+              </p>
+              <textarea
+                value={customAgentPromptDraft}
+                onChange={(e) => setCustomAgentPromptDraft(e.target.value)}
+                placeholder="e.g. Always respond in second-person perspective ('You see...', 'You feel...'). Describe environmental lighting and background music. Keep dialogue witty and sarcastic..."
+                rows={4}
+                className="w-full bg-slate-950 text-slate-100 text-xs rounded-xl p-3 border border-slate-800 focus:border-cyan-400 focus:outline-none font-mono"
               />
             </div>
           )}

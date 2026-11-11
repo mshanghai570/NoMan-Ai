@@ -103,10 +103,13 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
           data.theme.typography.googleFontFamilies.forEach(loadGoogleFont);
         }
 
+        // Instantly apply and persist the theme to the entire studio
+        handleSaveAndApplyTheme(data.theme);
+
         onShowToast(
           data.source === 'gemini'
-            ? `Generated theme "${data.theme.name}" with Gemini AI!`
-            : `Created theme "${data.theme.name}"!`
+            ? `Generated and applied "${data.theme.name}" with Gemini AI!`
+            : `Created and applied "${data.theme.name}"!`
         );
       }
     } catch (err: any) {
@@ -336,11 +339,14 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                 </div>
 
                 {/* Generate Button */}
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400">
+                    Theme colors and typography will automatically apply to NoMan AI in real-time.
+                  </span>
                   <button
                     onClick={handleGenerateTheme}
                     disabled={isGenerating || !prompt.trim()}
-                    className={`min-h-[44px] px-5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                    className={`min-h-[44px] px-5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shrink-0 ${
                       isGenerating || !prompt.trim()
                         ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                         : 'bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 text-white hover:opacity-95 shadow-lg shadow-cyan-500/20 active:scale-95'
@@ -349,12 +355,12 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                     {isGenerating ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Consulting Gemini AI...</span>
+                        <span>Synthesizing Theme...</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        <span>Synthesize Theme with Gemini</span>
+                        <span>Synthesize & Apply Instantly</span>
                       </>
                     )}
                   </button>
@@ -370,7 +376,7 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                 }}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-mono uppercase px-2 py-0.5 rounded" style={{
                           backgroundColor: generatedTheme.colors.surface,
                           color: generatedTheme.colors.primaryAccent,
@@ -378,8 +384,12 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                         }}>
                           {generatedTheme.vibe}
                         </span>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>Applied to Studio</span>
+                        </span>
                         <span className="text-xs text-slate-400">
-                          Generated via {generationSource === 'gemini' ? 'Gemini 3.8 Flash' : 'Synthesizer'}
+                          via {generationSource === 'gemini' ? 'Gemini 3.8 Flash' : 'Synthesizer'}
                         </span>
                       </div>
                       <h3 className="text-lg sm:text-xl font-bold mt-1" style={{
@@ -400,7 +410,7 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                         style={{ backgroundColor: generatedTheme.colors.primaryAccent }}
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>Apply & Save</span>
+                        <span>Re-Apply</span>
                       </button>
                     </div>
                   </div>
