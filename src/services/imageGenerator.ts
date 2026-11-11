@@ -1,4 +1,11 @@
-import type { AspectRatio, PromptEnhancementResponse, PromptAssistantResponse, AIProvider } from '../types';
+import type {
+  AspectRatio,
+  PromptEnhancementResponse,
+  PromptAssistantResponse,
+  AIProvider,
+  CustomProviderConfig,
+} from '../types';
+import { isServerProxyProvider } from '../providers/catalog';
 
 export interface GenerationParams {
   prompt: string;
@@ -15,6 +22,12 @@ export interface GenerationParams {
   cloudApiKey?: string;
   localEndpoint?: string;
   realismBoost?: boolean;
+  /** Locally stored provider keys, `${providerId}` or `${providerId}.${field}`. */
+  providerKeys?: Record<string, string>;
+  /** Optional API root overrides, keyed by provider id. */
+  providerBaseUrls?: Record<string, string>;
+  /** Custom JSON endpoint configuration. */
+  customProvider?: CustomProviderConfig;
 }
 
 export class ImageGeneratorService {
@@ -77,7 +90,49 @@ export class ImageGeneratorService {
       }
     }
 
-    // 2. Pollinations Cloud (FLUX Realism, FLUX Schnell, etc.)
+    // 2. Hosted provider registry (Leonardo, Replicate, BytePlus, Cloudflare,
+    // OpenAI-compatible, custom JSON). The server holds the adapter and,
+    // preferably, the key.
+    if (isServerProxyProvider(provider)) {
+      const providerKeys = params.providerKeys || {};
+      const response = await fetch('/api/providers/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          model,
+          prompt,
+          negativePrompt: negativePrompt || undefined,
+          width,
+          height,
+          aspectRatio: params.aspectRatio,
+          seed: actualSeed,
+          steps: params.steps,
+          cfgScale: params.cfgScale,
+          credentials: {
+            key: providerKeys[provider] || undefined,
+            accountId: providerKeys[`${provider}.accountId`] || undefined,
+            baseUrl: params.providerBaseUrls?.[provider] || undefined,
+          },
+          custom: params.customProvider,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Provider request failed (${response.status})`);
+      }
+
+      const imageUrl = Array.isArray(data.mediaUrls) ? data.mediaUrls[0] : '';
+      if (!imageUrl) throw new Error('The provider returned no image.');
+
+      return {
+        imageUrl,
+        seed: typeof data.seed === 'number' ? data.seed : actualSeed,
+      };
+    }
+
+    // 3. Pollinations Cloud (FLUX Realism, FLUX Schnell, etc.)
     if (provider === 'pollinations') {
       const finalPrompt = prompt.trim();
       const isRealismModel = model.includes('realism') || realismBoost;

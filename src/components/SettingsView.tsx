@@ -1,6 +1,22 @@
 import React, { useState } from 'react';
-import type { AgentMode, ChatProvider, ChatReplyLength, CustomModel, NsfwMode, UserSettings } from '../types';
-import { AGENT_MODES, CHAT_PROVIDERS, CHAT_PROVIDER_PRESETS, KILO_FREE_MODELS, REPLY_LENGTHS } from '../constants/chat';
+import type {
+  AgentMode,
+  AIProvider,
+  ChatProvider,
+  ChatReplyLength,
+  CustomModel,
+  CustomProviderConfig,
+  NsfwMode,
+  UserSettings,
+} from '../types';
+import {
+  AGENT_MODES,
+  CHAT_PROVIDERS,
+  CHAT_PROVIDER_PRESETS,
+  KILO_FREE_MODELS,
+  REPLY_LENGTHS,
+} from '../constants/chat';
+import { MEDIA_PROVIDERS, providerKeySlot } from '../providers/catalog';
 import {
   Sliders,
   Shield,
@@ -27,10 +43,11 @@ import {
   Video,
   Image as ImageIcon,
   Settings2,
+  ChevronDown,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
 import { AgeGateModal } from './AgeGateModal';
-import { clearStoredPersonaNsfwOverrides } from '../services/storage';
+import { DEFAULT_CUSTOM_PROVIDER, clearStoredPersonaNsfwOverrides } from '../services/storage';
 import { BUILTIN_THEMES } from '../constants/themes';
 import { CURATED_FONTS } from '../constants/fonts';
 import { loadGoogleFont } from '../utils/themeManager';
@@ -124,7 +141,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newModelId, setNewModelId] = useState('');
   const [newModelName, setNewModelName] = useState('');
   const [newModelDesc, setNewModelDesc] = useState('');
-  const [newModelProvider, setNewModelProvider] = useState<'huggingface' | 'pollinations' | 'local'>('huggingface');
+  const [newModelProvider, setNewModelProvider] = useState<AIProvider>('huggingface');
+
+  // Generation provider keys / endpoints (Image & Video Studio)
+  const [providerDrafts, setProviderDrafts] = useState<Record<string, string>>(() => ({
+    ...(settings.providerKeys || {}),
+  }));
+  const [providerSaved, setProviderSaved] = useState<string | null>(null);
+  const [showCustomProvider, setShowCustomProvider] = useState(false);
+  const [customDraft, setCustomDraft] = useState<CustomProviderConfig>(
+    settings.customProvider || DEFAULT_CUSTOM_PROVIDER
+  );
 
   const handleNsfwChange = (mode: NsfwMode) => {
     haptic.trigger('selection');
@@ -195,6 +222,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleReplyLengthChange = (length: ChatReplyLength) => {
     haptic.trigger('selection');
     onUpdateSettings({ chatReplyLength: length });
+  };
+
+  const handleSaveProviderKey = (slot: string) => {
+    haptic.trigger('success');
+    onUpdateSettings({
+      providerKeys: { ...(settings.providerKeys || {}), [slot]: (providerDrafts[slot] || '').trim() },
+    });
+    setProviderSaved(slot);
+    setTimeout(() => setProviderSaved(null), 1800);
+  };
+
+  const handleSaveProviderBaseUrl = (providerId: string, value: string) => {
+    onUpdateSettings({
+      providerBaseUrls: { ...(settings.providerBaseUrls || {}), [providerId]: value.trim() },
+    });
+  };
+
+  const handleSaveCustomProvider = () => {
+    haptic.trigger('success');
+    onUpdateSettings({ customProvider: { ...customDraft, enabled: true } });
+    setProviderSaved('custom');
+    setTimeout(() => setProviderSaved(null), 1800);
   };
 
   const handleSaveHfToken = () => {
@@ -1092,6 +1141,233 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
+      {/* 1g. Generation providers: keys, endpoints and a custom JSON workflow */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-slate-800">
+        <div className="flex items-center gap-2">
+          <Server className="w-4 h-4 text-emerald-400" />
+          <h2 className="text-sm font-bold text-white">API Provider Keys</h2>
+        </div>
+        <p className="text-xs text-slate-400">
+          Paste a key for any provider whose models you want in Image Studio. Keys stay in this
+          browser; set the matching env var on the server instead if you would rather keep them
+          there. The model list updates automatically.
+        </p>
+
+        <div className="space-y-2">
+          {MEDIA_PROVIDERS.filter(
+            (provider) =>
+              !provider.keyless && provider.id !== 'huggingface' && provider.id !== 'custom'
+          ).map((provider) => {
+            const keySlot = providerKeySlot(provider.id);
+            return (
+              <div
+                key={provider.id}
+                className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-slate-200">{provider.label}</span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{provider.blurb}</p>
+                  </div>
+                  {provider.docsUrl && (
+                    <a
+                      href={provider.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 shrink-0"
+                    >
+                      <span>Docs</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={providerDrafts[keySlot] || ''}
+                    onChange={(e) =>
+                      setProviderDrafts({ ...providerDrafts, [keySlot]: e.target.value })
+                    }
+                    placeholder={provider.keyLabel || 'API key'}
+                    className="flex-1 min-w-0 bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                  />
+                  <button
+                    onClick={() => handleSaveProviderKey(keySlot)}
+                    className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 shrink-0"
+                  >
+                    {providerSaved === keySlot ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : null}
+                    <span>{providerSaved === keySlot ? 'Saved' : 'Save Key'}</span>
+                  </button>
+                </div>
+
+                {provider.credentialFields?.map((field) => {
+                  const slot = providerKeySlot(provider.id, field.key);
+                  return (
+                    <div key={field.key} className="flex gap-2">
+                      <input
+                        type={field.secret === false ? 'text' : 'password'}
+                        value={providerDrafts[slot] || ''}
+                        onChange={(e) =>
+                          setProviderDrafts({ ...providerDrafts, [slot]: e.target.value })
+                        }
+                        placeholder={field.placeholder}
+                        aria-label={`${provider.label} ${field.label}`}
+                        className="flex-1 min-w-0 bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                      />
+                      <button
+                        onClick={() => handleSaveProviderKey(slot)}
+                        className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold shrink-0"
+                      >
+                        {providerSaved === slot ? 'Saved' : `Save ${field.label}`}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {provider.editableBaseUrl && (
+                  <input
+                    type="text"
+                    defaultValue={settings.providerBaseUrls?.[provider.id] || ''}
+                    onBlur={(e) => handleSaveProviderBaseUrl(provider.id, e.target.value)}
+                    placeholder={`Base URL (default ${provider.defaultBaseUrl})`}
+                    aria-label={`${provider.label} base URL`}
+                    className="w-full bg-slate-950 text-slate-300 text-[11px] rounded-lg px-3 py-1.5 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                  />
+                )}
+
+                {provider.envVar && (
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    Server env: {provider.envVar}
+                    {provider.id === 'cloudflare' ? ' + CLOUDFLARE_ACCOUNT_ID' : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+          <button
+            onClick={() => setShowCustomProvider(!showCustomProvider)}
+            className="w-full flex items-start justify-between gap-2 text-left"
+          >
+            <div>
+              <span className="text-xs font-semibold text-slate-200">Custom JSON endpoint</span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Any API the app does not ship: a ComfyUI wrapper, a relay, your own Worker.
+              </p>
+            </div>
+            <ChevronDown
+              className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${
+                showCustomProvider ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+
+          {showCustomProvider && (
+            <div className="space-y-2 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={customDraft.baseUrl}
+                  onChange={(e) => setCustomDraft({ ...customDraft, baseUrl: e.target.value })}
+                  placeholder="https://my-worker.example.com/generate"
+                  aria-label="Custom endpoint URL"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="password"
+                  value={customDraft.apiKey}
+                  onChange={(e) => setCustomDraft({ ...customDraft, apiKey: e.target.value })}
+                  placeholder="API key (optional)"
+                  aria-label="Custom endpoint API key"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="text"
+                  value={customDraft.model}
+                  onChange={(e) => setCustomDraft({ ...customDraft, model: e.target.value })}
+                  placeholder="Model id"
+                  aria-label="Custom model id"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="text"
+                  value={customDraft.resultPath}
+                  onChange={(e) => setCustomDraft({ ...customDraft, resultPath: e.target.value })}
+                  placeholder="Result path, e.g. data.0.url"
+                  aria-label="Custom result path"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <label className="block text-[11px] text-slate-400">
+                Body template (JSON). Placeholders: {"'{{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{model}} {{aspect_ratio}}'"}
+                <textarea
+                  rows={5}
+                  value={customDraft.bodyTemplate}
+                  onChange={(e) =>
+                    setCustomDraft({ ...customDraft, bodyTemplate: e.target.value })
+                  }
+                  className="mt-1 w-full bg-slate-950 text-slate-200 text-[11px] rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={customDraft.headers}
+                  onChange={(e) => setCustomDraft({ ...customDraft, headers: e.target.value })}
+                  placeholder='Extra headers JSON, e.g. {"X-Key":"abc"}'
+                  aria-label="Custom headers"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="text"
+                  value={customDraft.pollUrl || ''}
+                  onChange={(e) => setCustomDraft({ ...customDraft, pollUrl: e.target.value })}
+                  placeholder="Poll URL (optional, uses {{jobId}})"
+                  aria-label="Custom poll URL"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="text"
+                  value={customDraft.jobIdPath || ''}
+                  onChange={(e) => setCustomDraft({ ...customDraft, jobIdPath: e.target.value })}
+                  placeholder="Job id path, e.g. id"
+                  aria-label="Custom job id path"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+                <input
+                  type="text"
+                  value={customDraft.doneValue || ''}
+                  onChange={(e) => setCustomDraft({ ...customDraft, doneValue: e.target.value })}
+                  placeholder="Done status value (default succeeded)"
+                  aria-label="Custom done value"
+                  className="bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-emerald-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Add models for it in Custom Models below using provider "custom".
+                </span>
+                <button
+                  onClick={handleSaveCustomProvider}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shrink-0"
+                >
+                  {providerSaved === 'custom' ? <Check className="w-3.5 h-3.5" /> : null}
+                  <span>{providerSaved === 'custom' ? 'Saved' : 'Save Endpoint'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 2. Custom AI Models & Hugging Face Manager */}
       <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-slate-800">
         <div className="flex items-center justify-between">
@@ -1204,9 +1480,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onChange={(e) => setNewModelProvider(e.target.value as any)}
                   className="bg-slate-900 text-slate-200 text-xs rounded px-2 py-1 border border-slate-800"
                 >
-                  <option value="huggingface">Hugging Face</option>
-                  <option value="pollinations">Pollinations</option>
+                  {MEDIA_PROVIDERS.filter((provider) => provider.id !== 'custom').map(
+                    (provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </option>
+                    )
+                  )}
+                  <option value="custom">Custom endpoint</option>
                   <option value="local">Local</option>
+                  <option value="webgpu">WebGPU</option>
                 </select>
               </div>
 

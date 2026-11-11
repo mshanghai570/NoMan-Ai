@@ -1,6 +1,17 @@
 export type GenerationType = 'image' | 'video';
 
-export type AIProvider = 'pollinations' | 'huggingface' | 'local' | 'webgpu' | 'gemini' | 'custom';
+export type AIProvider =
+  | 'pollinations'
+  | 'huggingface'
+  | 'local'
+  | 'webgpu'
+  | 'gemini'
+  | 'leonardo'
+  | 'replicate'
+  | 'byteplus'
+  | 'cloudflare'
+  | 'openai'
+  | 'custom';
 
 export type ExecutionMethod = 'cloud' | 'local';
 export type ImageCloudProvider = 'gemini' | 'huggingface' | 'pollinations';
@@ -147,6 +158,34 @@ export interface CustomModel {
   isCustom?: boolean;
 }
 
+/**
+ * Escape hatch for any JSON media API (self-hosted ComfyUI wrapper, a relay, a
+ * Perchance bridge, your own Cloudflare Worker). Placeholders are substituted
+ * into the body before the request is sent.
+ */
+export interface CustomProviderConfig {
+  enabled: boolean;
+  label: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  kind: 'image' | 'video';
+  /** JSON body template with {{prompt}}, {{negative}}, {{width}}, {{height}}, {{seed}}, {{model}}, {{aspect_ratio}}. */
+  bodyTemplate: string;
+  /** Extra request headers as a JSON object. */
+  headers: string;
+  /** Dot path to the media URL, e.g. `data.0.url`. */
+  resultPath: string;
+  /** Optional async job polling. Use {{jobId}} in the URL. */
+  pollUrl?: string;
+  /** Dot path to the job id in the submit response. */
+  jobIdPath?: string;
+  /** Dot path to the job status. Defaults to `status`. */
+  statusPath?: string;
+  /** Status value that means finished. Defaults to `succeeded`. */
+  doneValue?: string;
+}
+
 export interface UserSettings {
   nsfwMode: NsfwMode;
   /** Default maturity for new roleplay chats. */
@@ -185,6 +224,12 @@ export interface UserSettings {
   cloudApiKey?: string;
   realismBoost: boolean;
   hfToken: string;
+  /** Per-provider API keys stored locally. Keys are `${providerId}` or `${providerId}.${field}`. */
+  providerKeys: Record<string, string>;
+  /** Optional API root overrides, keyed by provider id. */
+  providerBaseUrls: Record<string, string>;
+  /** Configurable JSON endpoint for providers the app does not ship. */
+  customProvider: CustomProviderConfig;
   customModels: CustomModel[];
   localEndpoint: string;
   localModelName: string;

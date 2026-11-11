@@ -1,4 +1,12 @@
 import type { CustomModel, AspectRatio, MotionStyle } from '../types';
+import { MEDIA_PROVIDERS, createPresetModels } from '../providers/catalog';
+
+/** Providers that live behind an API key; their presets are generated from the catalog. */
+const KEYED_PROVIDER_IDS = ['leonardo', 'replicate', 'byteplus', 'cloudflare', 'openai'];
+
+const KEYED_PROVIDER_MODELS: CustomModel[] = MEDIA_PROVIDERS.filter((provider) =>
+  KEYED_PROVIDER_IDS.includes(provider.id)
+).flatMap((provider) => createPresetModels(provider));
 
 export const DEFAULT_PRESET_MODELS: CustomModel[] = [
   // Flagship Cloud Photorealism Models (Closest to reality)
@@ -108,6 +116,9 @@ export const DEFAULT_PRESET_MODELS: CustomModel[] = [
     type: 'image',
     isCustom: false,
   },
+
+  // Hosted API providers (keys in Settings → Generation Providers)
+  ...KEYED_PROVIDER_MODELS,
 
   // Video Models
   {

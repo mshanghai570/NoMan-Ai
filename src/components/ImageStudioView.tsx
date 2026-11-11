@@ -309,6 +309,9 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
         cloudApiKey: settings.cloudApiKey,
         localEndpoint: settings.localEndpoint || settings.imageLocalEndpoint,
         realismBoost,
+        providerKeys: settings.providerKeys,
+        providerBaseUrls: settings.providerBaseUrls,
+        customProvider: settings.customProvider,
       });
 
       if (result.notice) {

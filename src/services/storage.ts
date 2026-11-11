@@ -1,4 +1,11 @@
-import type { GenerationItem, PersonaMemory, User, UserSettings } from '../types';
+import type {
+  CustomModel,
+  CustomProviderConfig,
+  GenerationItem,
+  PersonaMemory,
+  User,
+  UserSettings,
+} from '../types';
 import { DEFAULT_PRESET_MODELS } from '../constants/models';
 
 const STORAGE_KEYS = {
@@ -9,6 +16,19 @@ const STORAGE_KEYS = {
   CUSTOM_PERSONAS: 'noman_custom_personas',
   CHAT_NSFW_OVERRIDES: 'noman_chat_nsfw_overrides',
   CHAT_MEMORIES: 'noman_chat_memories',
+};
+
+export const DEFAULT_CUSTOM_PROVIDER: CustomProviderConfig = {
+  enabled: false,
+  label: 'Custom endpoint',
+  baseUrl: '',
+  model: '',
+  apiKey: '',
+  kind: 'image',
+  bodyTemplate:
+    '{\n  "prompt": "{{prompt}}",\n  "width": {{width}},\n  "height": {{height}}\n}',
+  headers: '',
+  resultPath: 'data.0.url',
 };
 
 // Default initial settings
@@ -38,6 +58,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   cloudApiKey: '',
   realismBoost: true,
   hfToken: '',
+  providerKeys: {},
+  providerBaseUrls: {},
+  customProvider: DEFAULT_CUSTOM_PROVIDER,
   customModels: [...DEFAULT_PRESET_MODELS],
   localEndpoint: 'http://localhost:11434',
   localModelName: 'llama3.2-vision',
@@ -171,7 +194,22 @@ export const getStoredSettings = (): UserSettings => {
     if (raw) {
       const parsed = JSON.parse(raw);
       // Merge with default settings in case new fields were added
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      const merged = { ...DEFAULT_SETTINGS, ...parsed };
+      // Provider presets ship with app updates, but stored settings keep an old
+      // model list. Add any preset that is missing so new providers appear.
+      const storedModels: CustomModel[] = merged.customModels || [];
+      const knownIds = new Set(storedModels.map((model) => model.id));
+      const missingPresets = DEFAULT_PRESET_MODELS.filter((model) => !knownIds.has(model.id));
+
+      return {
+        ...merged,
+        customModels: missingPresets.length
+          ? [...storedModels, ...missingPresets]
+          : storedModels,
+        providerKeys: merged.providerKeys || {},
+        providerBaseUrls: merged.providerBaseUrls || {},
+        customProvider: { ...DEFAULT_CUSTOM_PROVIDER, ...(merged.customProvider || {}) },
+      };
     }
   } catch (e) {
     console.error('Failed to load settings', e);

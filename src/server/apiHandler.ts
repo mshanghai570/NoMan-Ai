@@ -11,6 +11,8 @@ import {
   streamChat,
   summarizeConversation,
 } from './roleplayEngine.ts';
+import { generateWithProvider, hasServerKey, ProviderError } from './providerAdapters.ts';
+import type { MediaProviderId } from '../providers/catalog.ts';
 
 // Initialize Gemini client with aistudio-build telemetry header
 const getGeminiClient = () => {
@@ -913,6 +915,101 @@ Strictly respond with JSON matching this structure:
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ reachable: false, error: err.message }));
+      return true;
+    }
+  }
+
+  // 1i. Media provider registry: status and generation for every configured provider
+  if (url === '/api/providers' && req.method === 'GET') {
+    const providerIds: MediaProviderId[] = [
+      'leonardo',
+      'replicate',
+      'byteplus',
+      'cloudflare',
+      'openai',
+      'huggingface',
+    ];
+    const providers: Record<string, boolean> = {};
+    for (const id of providerIds) providers[id] = hasServerKey(id);
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        providers,
+        cloudflareAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
+      })
+    );
+    return true;
+  }
+
+  if (url === '/api/providers/generate' && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await parseJsonBody(req);
+    } catch (err) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid JSON' }));
+      return true;
+    }
+
+    const provider = typeof body?.provider === 'string' ? body.provider : '';
+    const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+    if (!provider || !prompt) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Missing provider or prompt' }));
+      return true;
+    }
+
+    const controller = new AbortController();
+    res.on('close', () => controller.abort());
+
+    const num = (value: unknown, fallback: number) =>
+      typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+    try {
+      const result = await generateWithProvider(
+        {
+          provider: provider as MediaProviderId,
+          model: typeof body.model === 'string' ? body.model : undefined,
+          kind: body.kind === 'video' ? 'video' : 'image',
+          prompt,
+          negativePrompt:
+            typeof body.negativePrompt === 'string' ? body.negativePrompt : undefined,
+          width: num(body.width, 1024),
+          height: num(body.height, 1024),
+          aspectRatio: typeof body.aspectRatio === 'string' ? body.aspectRatio : undefined,
+          seed: num(body.seed, 0),
+          steps: num(body.steps, 0) || undefined,
+          cfgScale: num(body.cfgScale, 0) || undefined,
+          credentials: {
+            key: typeof body.credentials?.key === 'string' ? body.credentials.key : undefined,
+            accountId:
+              typeof body.credentials?.accountId === 'string'
+                ? body.credentials.accountId
+                : undefined,
+            baseUrl:
+              typeof body.credentials?.baseUrl === 'string'
+                ? body.credentials.baseUrl
+                : undefined,
+          },
+          custom: body.custom && typeof body.custom === 'object' ? body.custom : undefined,
+        },
+        controller.signal
+      );
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+      return true;
+    } catch (err: any) {
+      const status = err instanceof ProviderError ? err.status : 500;
+      console.error(`Provider ${provider} failed:`, err?.message || err);
+      res.statusCode = status;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err?.message || 'Provider generation failed' }));
       return true;
     }
   }
