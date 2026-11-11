@@ -4,6 +4,13 @@
  */
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import type { IncomingMessage, ServerResponse } from 'http';
+import {
+  assertServerChatProvider,
+  completeChat,
+  createScenePrompt,
+  streamChat,
+  summarizeConversation,
+} from './roleplayEngine.ts';
 
 // Initialize Gemini client with aistudio-build telemetry header
 const getGeminiClient = () => {
@@ -39,6 +46,25 @@ const parseJsonBody = async (req: IncomingMessage): Promise<any> => {
     });
     req.on('error', reject);
   });
+};
+
+const rejectWebLlmProvider = (provider: unknown, res: ServerResponse): boolean => {
+  if (provider !== 'webllm') return false;
+
+  try {
+    assertServerChatProvider(provider);
+  } catch (err) {
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        error: err instanceof Error ? err.message : 'WebLLM must run in the browser.',
+      })
+    );
+    return true;
+  }
+
+  return false;
 };
 
 export const handleApiRequest = async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
@@ -244,11 +270,165 @@ Output strictly valid JSON with this exact shape:
     }
   }
 
-  // 1c. Gemini AI Roleplay Character Chat Endpoint
-  if (url === '/api/gemini/chat' && req.method === 'POST') {
+  // 1c. Streaming roleplay chat (Gemini / Ollama / OpenAI-compatible)
+  if (url === '/api/chat/stream' && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await parseJsonBody(req);
+    } catch (err) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid JSON' }));
+      return true;
+    }
+
+    if (!body?.userMessage || typeof body.userMessage !== 'string') {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Missing userMessage parameter' }));
+      return true;
+    }
+    if (rejectWebLlmProvider(body?.config?.provider, res)) return true;
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const send = (payload: Record<string, unknown>) => {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+    };
+    const controller = new AbortController();
+    res.on('close', () => controller.abort());
+
+    try {
+      const fallback = body?.config?.fallback;
+      const canFallback =
+        fallback?.enabled === true &&
+        typeof fallback?.endpoint === 'string' &&
+        typeof fallback?.model === 'string' &&
+        fallback.model.trim().length > 0;
+
+      let emitted = false;
+
+      const pump = async (payload: Record<string, unknown>) => {
+        for await (const delta of streamChat(payload as any, controller.signal)) {
+          if (controller.signal.aborted) return;
+          emitted = true;
+          send({ type: 'delta', text: delta });
+        }
+      };
+
+      try {
+        await pump(body);
+      } catch (primaryError: any) {
+        // Only retry when nothing has been sent yet — a half-written reply
+        // cannot be transparently restarted.
+        if (!canFallback || emitted || controller.signal.aborted) throw primaryError;
+
+        console.warn(
+          `Primary roleplay provider failed (${primaryError?.message || primaryError}); retrying on local model ${fallback.model}`
+        );
+        send({ type: 'fallback', provider: 'ollama', model: fallback.model });
+
+        await pump({
+          ...body,
+          config: {
+            ...(body.config || {}),
+            provider: 'ollama',
+            endpoint: fallback.endpoint,
+            model: fallback.model,
+            apiKey: '',
+          },
+        });
+      }
+
+      if (!controller.signal.aborted) send({ type: 'done' });
+      res.end();
+    } catch (err: any) {
+      console.error('Roleplay stream error:', err);
+      send({ type: 'error', error: err.message || 'Chat generation failed' });
+      res.end();
+    }
+    return true;
+  }
+
+  // 1d. Rolling memory extraction (summary + durable facts + relationship)
+  if (url === '/api/chat/summarize' && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
-      const { persona, messages = [], userMessage } = body;
+      if (!body?.persona || !Array.isArray(body.messages)) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Missing persona or messages' }));
+        return true;
+      }
+      if (rejectWebLlmProvider(body?.config?.provider, res)) return true;
+
+      const memory = await summarizeConversation({
+        persona: body.persona,
+        memory: body.memory || { summary: '', facts: [], relationship: '', updatedAt: 0 },
+        messages: body.messages,
+        config: body.config,
+      });
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ memory }));
+      return true;
+    } catch (err: any) {
+      console.error('Memory summarization error:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err.message || 'Memory summarization failed' }));
+      return true;
+    }
+  }
+
+  // 1e. Character-consistent scene / portrait prompt for the image engine
+  if (url === '/api/chat/scene-prompt' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      if (!body?.persona) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Missing persona' }));
+        return true;
+      }
+      if (rejectWebLlmProvider(body?.config?.provider, res)) return true;
+
+      const result = await createScenePrompt({
+        persona: body.persona,
+        memory: body.memory,
+        messages: Array.isArray(body.messages) ? body.messages : [],
+        nsfw: body.nsfw === true,
+        kind: body.kind === 'portrait' ? 'portrait' : 'scene',
+        config: body.config,
+      });
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+      return true;
+    } catch (err: any) {
+      console.error('Scene prompt error:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err.message || 'Scene prompt generation failed' }));
+      return true;
+    }
+  }
+
+  // 1f. Legacy non-streaming chat endpoint (kept for compatibility)
+  if (url === '/api/gemini/chat' && req.method === 'POST') {
+    let body: any = {};
+    try {
+      body = await parseJsonBody(req);
+      if (rejectWebLlmProvider(body?.config?.provider, res)) return true;
+      const { persona, messages = [], userMessage, nsfw = false } = body;
 
       if (!userMessage || typeof userMessage !== 'string') {
         res.statusCode = 400;
@@ -257,76 +437,34 @@ Output strictly valid JSON with this exact shape:
         return true;
       }
 
-      const personaName = persona?.name || 'Character';
-      const systemInstruction = `${persona?.systemPrompt || `You are ${personaName}, an engaging AI roleplay character.`}
-Scenario: ${persona?.scenario || 'A creative interactive roleplay world.'}
-
-ROLEPLAY GUIDELINES:
-- Stay completely immersed in your persona.
-- Use asterisks for character actions, gestures, sensory cues, and emotional reactions (e.g. *leans forward with a knowing smile*, *pauses thoughtfully*).
-- Speak directly in the character's unique voice and tone.
-- React dynamically to what the user says and does. Keep answers engaging, vivid, and narrative.
-- Keep all interactions creative, immersive, and compliant with standard content safety guidelines.`;
-
-      const ai = getGeminiClient();
-      if (!ai) {
-        // Fallback local character response if API key is not present
-        const fallbackActions = [
-          `*looks at you intently and nods* "That's an intriguing point. In our world, things aren't always so straightforward."`,
-          `*glances around the surroundings before leaning in* "You've got courage bringing that up here. Let's see how this unfolds."`,
-          `*smiles faintly as energy crackles subtly in the air* "I hear you clearly. Let us move to the next phase of our journey."`,
-        ];
-        const randomReply = fallbackActions[Math.floor(Math.random() * fallbackActions.length)];
-
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
-          reply: `${randomReply} *takes a measured breath* What is your next move?`,
-          source: 'local-fallback',
-        }));
-        return true;
-      }
-
-      // Format conversation turns for Gemini generateContent
-      // Take up to the last 12 turns for context memory
-      const recentHistory = messages.slice(-12);
-      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-
-      for (const msg of recentHistory) {
-        contents.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }],
-        });
-      }
-
-      // Add current user message
-      contents.push({
-        role: 'user',
-        parts: [{ text: userMessage }],
+      const reply = await completeChat({
+        persona: persona || { name: 'Character' },
+        messages,
+        memory: body.memory,
+        avoidPhrases: body.avoidPhrases,
+        userMessage,
+        nsfw: nsfw === true,
+        replyLength: body.replyLength,
+        config: { provider: 'gemini', ...(body.config || {}) },
       });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents,
-        config: {
-          systemInstruction,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW,
-          },
-        },
-      });
-
-      const reply = response.text || `*${personaName} looks at you thoughtfully and smiles* "Understood."`;
 
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ reply }));
+      res.end(JSON.stringify({ reply, nsfw: nsfw === true }));
       return true;
     } catch (err: any) {
+      // Keep the old endpoint graceful when no provider is configured.
       console.error('Roleplay chat error:', err);
-      res.statusCode = 500;
+      const personaName = body?.persona?.name || 'Character';
+      res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: err.message || 'Chat generation failed' }));
+      res.end(
+        JSON.stringify({
+          reply: `*${personaName} pauses, listening closely* "The comms are unreliable right now, but I hear you. Let us keep moving."`,
+          source: 'local-fallback',
+          nsfw: body?.nsfw === true,
+        })
+      );
       return true;
     }
   }

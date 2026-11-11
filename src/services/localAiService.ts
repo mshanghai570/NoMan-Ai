@@ -32,7 +32,7 @@ export class LocalAiService {
     if (!nav.gpu) {
       return {
         isSupported: false,
-        description: 'WebGPU is not enabled in this browser. On iOS Safari, ensure iOS 17+ with WebGPU enabled in Advanced Experimental Settings.',
+        description: 'WebGPU is unavailable. Use iOS 26+ Safari on a secure (HTTPS) origin and check browser and device WebGPU support.',
       };
     }
 
@@ -41,7 +41,7 @@ export class LocalAiService {
       if (!adapter) {
         return {
           isSupported: false,
-          description: 'No compatible WebGPU hardware adapter found on device.',
+          description: 'WebGPU is present, but no compatible adapter is available on this device.',
         };
       }
 
@@ -51,7 +51,7 @@ export class LocalAiService {
         adapterName: info.description || info.device || 'Apple Silicon / Device GPU',
         vendor: info.vendor || 'Hardware Accelerated',
         architecture: info.architecture || 'Unified Memory',
-        description: 'WebGPU is active and fully capable of running in-browser neural shaders and Wasm model tensors.',
+        description: 'WebGPU is available for browser-based model inference.',
       };
     } catch (e: any) {
       return {

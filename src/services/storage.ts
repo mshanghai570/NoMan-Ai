@@ -1,4 +1,4 @@
-import type { GenerationItem, User, UserSettings } from '../types';
+import type { GenerationItem, PersonaMemory, User, UserSettings } from '../types';
 import { DEFAULT_PRESET_MODELS } from '../constants/models';
 
 const STORAGE_KEYS = {
@@ -7,11 +7,24 @@ const STORAGE_KEYS = {
   GENERATIONS: 'noman_saved_generations',
   CHAT_CONVERSATIONS: 'noman_chat_conversations',
   CUSTOM_PERSONAS: 'noman_custom_personas',
+  CHAT_NSFW_OVERRIDES: 'noman_chat_nsfw_overrides',
+  CHAT_MEMORIES: 'noman_chat_memories',
 };
 
 // Default initial settings
 export const DEFAULT_SETTINGS: UserSettings = {
   nsfwMode: 'warn', // 'safe' | 'warn' | 'unrestricted'
+  chatNsfwMode: 'sfw',
+  chatAgeVerified: false,
+  chatProvider: 'gemini',
+  chatModel: 'gemini-3.8-flash',
+  chatEndpoint: '',
+  chatApiKey: '',
+  chatTemperature: 0.9,
+  chatReplyLength: 'medium',
+  chatFallbackEnabled: false,
+  chatFallbackEndpoint: 'http://localhost:11434',
+  chatFallbackModel: 'llama3.2',
   defaultProvider: 'pollinations',
   defaultModel: 'flux',
   hfToken: '',
@@ -190,6 +203,8 @@ export const exportUserData = (): string => {
     generations: getStoredGenerations(),
     conversations: getStoredConversations(),
     customPersonas: getStoredCustomPersonas(),
+    chatNsfwOverrides: getStoredPersonaNsfwOverrides(),
+    chatMemories: getStoredMemories(),
   };
   return JSON.stringify(data, null, 2);
 };
@@ -206,6 +221,15 @@ export const importUserData = (jsonString: string): boolean => {
       }
       if (Array.isArray(data.customPersonas)) {
         saveStoredCustomPersonas(data.customPersonas);
+      }
+      if (data.chatNsfwOverrides && typeof data.chatNsfwOverrides === 'object') {
+        localStorage.setItem(
+          STORAGE_KEYS.CHAT_NSFW_OVERRIDES,
+          JSON.stringify(data.chatNsfwOverrides)
+        );
+      }
+      if (data.chatMemories && typeof data.chatMemories === 'object') {
+        localStorage.setItem(STORAGE_KEYS.CHAT_MEMORIES, JSON.stringify(data.chatMemories));
       }
       return true;
     }
@@ -231,9 +255,16 @@ export const getStoredConversationForPersona = (
   initialGreeting?: string
 ): import('../types').ChatMessage[] => {
   const all = getStoredConversations();
-  if (all[personaId] && all[personaId].length > 0) {
-    return all[personaId];
-  }
+  const stored = Array.isArray(all[personaId]) ? all[personaId] : [];
+
+  // A reload during an in-flight stream can leave an empty assistant bubble
+  // behind. Never show that on remount.
+  const usable = stored.filter(
+    (msg) => msg && (msg.role === 'user' || (msg.content || '').trim().length > 0)
+  );
+
+  if (usable.length > 0) return usable;
+
   // If no history exists, start with persona greeting if provided
   if (initialGreeting) {
     return [
@@ -304,5 +335,98 @@ export const saveStoredCustomPersonas = (
     localStorage.setItem(STORAGE_KEYS.CUSTOM_PERSONAS, JSON.stringify(personas));
   } catch (e) {
     console.error('Failed to save custom personas', e);
+  }
+};
+
+// Per-character mature chat overrides (SpicyChat-style per-chat toggle)
+export const getStoredPersonaNsfwOverrides = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CHAT_NSFW_OVERRIDES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load chat NSFW overrides', e);
+  }
+  return {};
+};
+
+export const saveStoredPersonaNsfwOverride = (personaId: string, enabled: boolean): void => {
+  try {
+    const all = getStoredPersonaNsfwOverrides();
+    all[personaId] = enabled;
+    localStorage.setItem(STORAGE_KEYS.CHAT_NSFW_OVERRIDES, JSON.stringify(all));
+  } catch (e) {
+    console.error('Failed to save chat NSFW override', e);
+  }
+};
+
+/** Master off switch: resets every per-character override back to SFW. */
+export const clearStoredPersonaNsfwOverrides = (): void => {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.CHAT_NSFW_OVERRIDES);
+  } catch (e) {
+    console.error('Failed to clear chat NSFW overrides', e);
+  }
+};
+
+// Long-term roleplay memory (rolling summary + durable facts, per character)
+export const EMPTY_MEMORY: PersonaMemory = {
+  summary: '',
+  facts: [],
+  relationship: '',
+  updatedAt: 0,
+};
+
+export const getStoredMemories = (): Record<string, PersonaMemory> => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CHAT_MEMORIES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load chat memories', e);
+  }
+  return {};
+};
+
+export const getStoredMemoryForPersona = (personaId: string): PersonaMemory => {
+  const stored = getStoredMemories()[personaId];
+  if (!stored) return { ...EMPTY_MEMORY };
+  return {
+    summary: stored.summary || '',
+    facts: Array.isArray(stored.facts) ? stored.facts : [],
+    relationship: stored.relationship || '',
+    lastSummarizedMessageId: stored.lastSummarizedMessageId,
+    updatedAt: stored.updatedAt || 0,
+  };
+};
+
+export const saveStoredMemoryForPersona = (
+  personaId: string,
+  memory: PersonaMemory
+): void => {
+  try {
+    const all = getStoredMemories();
+    all[personaId] = memory;
+    localStorage.setItem(STORAGE_KEYS.CHAT_MEMORIES, JSON.stringify(all));
+  } catch (e) {
+    console.error('Failed to save chat memory', e);
+  }
+};
+
+export const clearStoredMemoryForPersona = (personaId: string): void => {
+  try {
+    const all = getStoredMemories();
+    delete all[personaId];
+    localStorage.setItem(STORAGE_KEYS.CHAT_MEMORIES, JSON.stringify(all));
+  } catch (e) {
+    console.error('Failed to clear chat memory', e);
   }
 };

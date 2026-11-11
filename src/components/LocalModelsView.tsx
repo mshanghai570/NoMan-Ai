@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { UserSettings } from '../types';
 import { LocalAiService, type WebGpuDiagnostics, type LocalEndpointStatus } from '../services/localAiService';
 import {
+  WEBLLM_MODELS,
+  webLlmService,
+  type WebLlmModelId,
+  type WebLlmSnapshot,
+} from '../services/webLlmService';
+import {
   Cpu,
   Zap,
   Globe,
@@ -29,6 +35,12 @@ export const LocalModelsView: React.FC<LocalModelsViewProps> = ({
   onUpdateSettings,
 }) => {
   const [diagnostics, setDiagnostics] = useState<WebGpuDiagnostics | null>(null);
+  const [webLlmSnapshot, setWebLlmSnapshot] = useState<WebLlmSnapshot>(() =>
+    webLlmService.getSnapshot()
+  );
+  const [modelCached, setModelCached] = useState<boolean | null>(null);
+  const [isCheckingCache, setIsCheckingCache] = useState(false);
+  const [cacheError, setCacheError] = useState<string | null>(null);
   const [endpointInput, setEndpointInput] = useState<string>(settings.localEndpoint || 'http://localhost:11434');
   const [pingStatus, setPingStatus] = useState<LocalEndpointStatus | null>(null);
   const [isPinging, setIsPinging] = useState(false);
@@ -39,11 +51,78 @@ export const LocalModelsView: React.FC<LocalModelsViewProps> = ({
   const [benchmarkFps, setBenchmarkFps] = useState<number>(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const selectedModelId: WebLlmModelId = WEBLLM_MODELS.some(
+    ({ id }) => id === settings.chatModel
+  )
+    ? (settings.chatModel as WebLlmModelId)
+    : WEBLLM_MODELS[0].id;
 
   useEffect(() => {
     // Run hardware test on mount
     LocalAiService.testWebGpu().then((res) => setDiagnostics(res));
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = webLlmService.subscribe(setWebLlmSnapshot);
+    setWebLlmSnapshot(webLlmService.getSnapshot());
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsCheckingCache(true);
+    setModelCached(null);
+    setCacheError(null);
+    webLlmService
+      .isCached(selectedModelId)
+      .then((cached) => {
+        if (!cancelled) setModelCached(cached);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCacheError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingCache(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedModelId]);
+
+  const handleLoadWebLlmModel = async () => {
+    haptic.trigger('selection');
+    setCacheError(null);
+    try {
+      await webLlmService.loadModel(selectedModelId);
+      setModelCached(true);
+    } catch (error) {
+      setCacheError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleUnloadWebLlmModel = async () => {
+    haptic.trigger('selection');
+    setCacheError(null);
+    try {
+      await webLlmService.unload();
+    } catch (error) {
+      setCacheError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleDeleteWebLlmModel = async () => {
+    haptic.trigger('warning');
+    setCacheError(null);
+    try {
+      await webLlmService.deleteCachedModel(selectedModelId);
+      setModelCached(false);
+    } catch (error) {
+      setCacheError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   const handlePing = async () => {
     haptic.trigger('selection');
@@ -179,7 +258,7 @@ export const LocalModelsView: React.FC<LocalModelsViewProps> = ({
               <span>1. In-Browser WebGPU & Wasm</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Model weights run directly in your browser tab utilizing your Apple Silicon / iPhone GPU (via WebGPU & WebAssembly). 100% private, works offline, and requires zero servers.
+              With WebLLM selected, roleplay replies, memory summaries, and scene prompts run on this device. Image and video generation are separate. The first model download needs a network connection, and browser storage may be evicted, so offline availability is not guaranteed.
             </p>
           </div>
 
@@ -194,6 +273,126 @@ export const LocalModelsView: React.FC<LocalModelsViewProps> = ({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* On-device WebLLM model lifecycle */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-cyan-500/30">
+        <div className="flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-cyan-400" />
+          <div>
+            <h2 className="text-sm font-bold text-white">On-Device Roleplay Models</h2>
+            <p className="text-[11px] text-slate-400">
+              WebGPU support is detected by browser feature and adapter checks, not an iOS version check.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+          <div>
+            <label
+              htmlFor="webllm-model"
+              className="block text-[11px] font-semibold text-slate-400 mb-1"
+            >
+              WebLLM model
+            </label>
+            <select
+              id="webllm-model"
+              value={selectedModelId}
+              onChange={(event) =>
+                onUpdateSettings({ chatModel: event.target.value as WebLlmModelId })
+              }
+              className="w-full bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-cyan-400 focus:outline-none"
+            >
+              {WEBLLM_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span className="text-[11px] text-slate-400 sm:pb-2">
+            {isCheckingCache
+              ? 'Checking browser cache…'
+              : modelCached === null
+              ? 'Cache status unavailable'
+              : modelCached
+              ? 'Model cached in this browser'
+              : 'Model not cached'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleLoadWebLlmModel}
+            disabled={!diagnostics?.isSupported || webLlmSnapshot.phase === 'loading'}
+            className="px-3.5 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold"
+          >
+            {webLlmSnapshot.phase === 'loading'
+              ? 'Loading model…'
+              : modelCached
+              ? 'Load model'
+              : 'Download & load model'}
+          </button>
+          {webLlmSnapshot.phase === 'ready' && (
+            <button
+              type="button"
+              onClick={handleUnloadWebLlmModel}
+              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+            >
+              Unload model
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleDeleteWebLlmModel}
+            disabled={modelCached !== true || webLlmSnapshot.phase === 'loading'}
+            className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-rose-950 disabled:text-slate-600 disabled:hover:bg-slate-800 text-slate-300 text-xs font-semibold"
+          >
+            Delete cached model
+          </button>
+        </div>
+
+        {webLlmSnapshot.phase === 'loading' && (
+          <div className="space-y-1.5" aria-live="polite">
+            <div className="flex justify-between gap-3 text-[11px] text-slate-300">
+              <span>{webLlmSnapshot.message || 'Loading model…'}</span>
+              <span>{Math.round(webLlmSnapshot.progress * 100)}%</span>
+            </div>
+            <div
+              className="h-2 rounded-full bg-slate-900 overflow-hidden"
+              role="progressbar"
+              aria-label="WebLLM model download and load progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(webLlmSnapshot.progress * 100)}
+            >
+              <div
+                className="h-full bg-cyan-400 transition-[width]"
+                style={{ width: `${Math.round(webLlmSnapshot.progress * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {webLlmSnapshot.phase === 'ready' && (
+          <p className="text-[11px] text-emerald-300" role="status">
+            {WEBLLM_MODELS.find(({ id }) => id === webLlmSnapshot.modelId)?.label || 'Model'} is loaded and ready.
+          </p>
+        )}
+        {webLlmSnapshot.phase === 'error' && webLlmSnapshot.error && (
+          <p className="text-[11px] text-rose-300" role="alert">
+            {webLlmSnapshot.error}
+          </p>
+        )}
+        {cacheError && (
+          <p className="text-[11px] text-rose-300" role="alert">
+            {cacheError}
+          </p>
+        )}
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          iOS 26+ Safari is the target, but WebGPU availability depends on feature detection and a compatible adapter. The first model download needs network access; browser-managed model cache can be evicted.
+        </p>
       </div>
 
       {/* WebGPU Device Diagnostics Card */}
@@ -228,12 +427,13 @@ export const LocalModelsView: React.FC<LocalModelsViewProps> = ({
           </div>
 
           <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-            <span className="text-[10px] text-slate-500 font-mono block">iOS COMPATIBILITY</span>
+            <span className="text-[10px] text-slate-500 font-mono block">SAFARI TARGET</span>
             <span className="font-semibold text-slate-200 mt-0.5 block truncate">
-              iOS 17+ Safari WebKit
+              iOS 26+; feature-detect WebGPU
             </span>
           </div>
         </div>
+        <p className="text-[10px] text-slate-500">{diagnostics?.description || 'Checking WebGPU feature and adapter support…'}</p>
 
         {/* Live Tensor Benchmark Canvas */}
         <div className="space-y-2 pt-2 border-t border-slate-800/80">

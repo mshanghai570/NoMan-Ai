@@ -30,6 +30,7 @@ interface ImageStudioViewProps {
   onSaveGeneration: (item: GenerationItem) => void;
   onSendToVideoLab: (imageUrl: string, prompt: string) => void;
   initialPrompt?: string;
+  initialNsfw?: boolean;
 }
 
 export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
@@ -37,6 +38,7 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
   onSaveGeneration,
   onSendToVideoLab,
   initialPrompt = '',
+  initialNsfw = false,
 }) => {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [negativePrompt, setNegativePrompt] = useState('');
@@ -55,13 +57,15 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [nsfwRevealed, setNsfwRevealed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [forcedNsfw, setForcedNsfw] = useState(initialNsfw);
 
   // Sync incoming initial prompt if transferred from Roleplay Chat or other tabs
   React.useEffect(() => {
     if (initialPrompt && initialPrompt.trim()) {
       setPrompt(initialPrompt);
+      setForcedNsfw(initialNsfw);
     }
-  }, [initialPrompt]);
+  }, [initialPrompt, initialNsfw]);
 
   // Prompt Assistant lightweight LLM state
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
@@ -210,7 +214,7 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
       finalPrompt = `${finalPrompt}, ${styleObj.promptSuffix}`;
     }
 
-    const isNsfw = checkIsNsfwPrompt(finalPrompt);
+    const isNsfw = forcedNsfw || checkIsNsfwPrompt(finalPrompt);
 
     // Block if Safe Mode is active and NSFW detected
     if (settings.nsfwMode === 'safe' && isNsfw) {
@@ -337,7 +341,10 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
             <textarea
               id="image-prompt"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                setForcedNsfw(false);
+              }}
               placeholder="e.g. Cinematic portrait of a celestial warrior with incandescent neon eyes, flowing dark cape, floating in starry orbit..."
               rows={3}
               className="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-xl p-3.5 text-sm border border-slate-700/80 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 focus:outline-none resize-none transition-all"

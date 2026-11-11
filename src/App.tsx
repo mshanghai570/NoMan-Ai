@@ -33,6 +33,7 @@ export default function App() {
 
   // Cross-tab transfer states
   const [preloadedStudioPrompt, setPreloadedStudioPrompt] = useState<string | undefined>(undefined);
+  const [preloadedStudioNsfw, setPreloadedStudioNsfw] = useState(false);
   const [preloadedVideoImage, setPreloadedVideoImage] = useState<string | undefined>(undefined);
   const [preloadedVideoPrompt, setPreloadedVideoPrompt] = useState<string | undefined>(undefined);
   const [preloadedExtendItem, setPreloadedExtendItem] = useState<GenerationItem | undefined>(undefined);
@@ -95,10 +96,11 @@ export default function App() {
   };
 
   // Switch to Image Studio with transferred prompt from Roleplay Chat
-  const handleSendPromptToStudio = (prompt: string) => {
+  const handleSendPromptToStudio = (prompt: string, options?: { nsfw?: boolean }) => {
     setPreloadedStudioPrompt(prompt);
+    setPreloadedStudioNsfw(options?.nsfw === true);
     setActiveTab('generate');
-    showToast('Scene prompt transferred to Image Studio');
+    showToast('Character scene prompt transferred to Image Studio');
   };
 
   // Switch to Video Lab from Image Studio or Library
@@ -178,6 +180,7 @@ export default function App() {
             onSaveGeneration={handleSaveGeneration}
             onSendToVideoLab={handleSendToVideoLab}
             initialPrompt={preloadedStudioPrompt}
+            initialNsfw={preloadedStudioNsfw}
           />
         )}
 
@@ -196,6 +199,11 @@ export default function App() {
           <ChatView
             settings={settings}
             onSendToStudio={handleSendPromptToStudio}
+            onUpdateSettings={handleUpdateSettings}
+            onOpenChatSettings={() => {
+              setActiveTab('settings');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
         )}
 

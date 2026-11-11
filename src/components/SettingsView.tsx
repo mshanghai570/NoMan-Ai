@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import type { CustomModel, NsfwMode, UserSettings } from '../types';
+import type { ChatProvider, ChatReplyLength, CustomModel, NsfwMode, UserSettings } from '../types';
+import { CHAT_PROVIDERS, CHAT_PROVIDER_PRESETS, REPLY_LENGTHS } from '../constants/chat';
 import {
   Sliders,
   Shield,
@@ -15,8 +16,13 @@ import {
   Sparkles,
   HelpCircle,
   ExternalLink,
+  Flame,
+  Gauge,
+  Server,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
+import { AgeGateModal } from './AgeGateModal';
+import { clearStoredPersonaNsfwOverrides } from '../services/storage';
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -29,6 +35,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [hfToken, setHfToken] = useState(settings.hfToken || '');
   const [tokenSaved, setTokenSaved] = useState(false);
+  const [showChatAgeGate, setShowChatAgeGate] = useState(false);
+  const [chatKeyDraft, setChatKeyDraft] = useState(settings.chatApiKey || '');
+  const [chatKeySaved, setChatKeySaved] = useState(false);
 
   // New custom model form state
   const [showAddModel, setShowAddModel] = useState(false);
@@ -40,6 +49,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleNsfwChange = (mode: NsfwMode) => {
     haptic.trigger('selection');
     onUpdateSettings({ nsfwMode: mode });
+  };
+
+  const handleToggleMatureChat = () => {
+    haptic.trigger('selection');
+
+    // Turning the master switch off also resets every per-character chat to SFW.
+    if (settings.chatNsfwMode === 'nsfw') {
+      clearStoredPersonaNsfwOverrides();
+      onUpdateSettings({ chatNsfwMode: 'sfw' });
+      return;
+    }
+
+    if (!settings.chatAgeVerified) {
+      setShowChatAgeGate(true);
+      return;
+    }
+
+    onUpdateSettings({ chatNsfwMode: 'nsfw' });
+  };
+
+  const handleConfirmChatAge = () => {
+    onUpdateSettings({ chatAgeVerified: true, chatNsfwMode: 'nsfw' });
+    setShowChatAgeGate(false);
+  };
+
+  const handleChatProviderChange = (provider: ChatProvider) => {
+    haptic.trigger('selection');
+    const preset = CHAT_PROVIDER_PRESETS[provider];
+    onUpdateSettings({
+      chatProvider: provider,
+      chatModel: preset.model,
+      chatEndpoint: preset.endpoint,
+      chatApiKey: '',
+    });
+    setChatKeyDraft('');
+  };
+
+  const handleSaveChatKey = () => {
+    haptic.trigger('success');
+    onUpdateSettings({ chatApiKey: chatKeyDraft.trim() });
+    setChatKeySaved(true);
+    setTimeout(() => setChatKeySaved(false), 2000);
+  };
+
+  const handleReplyLengthChange = (length: ChatReplyLength) => {
+    haptic.trigger('selection');
+    onUpdateSettings({ chatReplyLength: length });
   };
 
   const handleSaveHfToken = () => {
@@ -164,6 +220,313 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Raw generation without blurring or local prompt blocking (standard model boundaries apply).
             </p>
           </button>
+        </div>
+      </div>
+
+      {/* 1b. Roleplay Chat Maturity (per-chat toggle default) */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5 border border-slate-800">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Flame className="w-4 h-4 text-rose-400" />
+            <div>
+              <h2 className="text-sm font-bold text-white">Roleplay Chat Maturity</h2>
+              <p className="text-[11px] text-slate-400">Default for character chats</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.chatNsfwMode === 'nsfw'}
+            aria-label="Enable mature roleplay by default"
+            onClick={handleToggleMatureChat}
+            disabled={settings.nsfwMode === 'safe'}
+            className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 mt-1 ${
+              settings.chatNsfwMode === 'nsfw' ? 'bg-rose-500' : 'bg-slate-800'
+            } ${settings.nsfwMode === 'safe' ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                settings.chatNsfwMode === 'nsfw' ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Mature mode lets your characters engage in adult romantic and narrative themes. Each
+          character also has its own flame toggle in the chat header, so you can keep one chat
+          SFW and another mature.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span
+            className={`px-2 py-0.5 rounded-full font-mono font-bold border ${
+              settings.chatAgeVerified
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-900 text-slate-400 border-slate-700'
+            }`}
+          >
+            {settings.chatAgeVerified ? '18+ VERIFIED' : '18+ VERIFICATION REQUIRED'}
+          </span>
+          <span className="text-slate-500">Confirmation stays on this device only</span>
+        </div>
+
+        <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 leading-snug">
+          Mature chat is for fictional adults only. Hard limits are enforced in the prompt: no
+          minors, incest, bestiality, sexual violence, coercion, or real people. The underlying
+          model may still refuse some requests.
+        </div>
+
+        {settings.nsfwMode === 'safe' && (
+          <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-300">
+            Content Filter is set to <strong>Safe Mode</strong>. Switch it to Warning or
+            Unrestricted above to unlock mature chat.
+          </div>
+        )}
+      </div>
+
+      {/* 1c. Roleplay Engine (provider / model / endpoint) */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-slate-800">
+        <div className="flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-violet-400" />
+          <div>
+            <h2 className="text-sm font-bold text-white">Roleplay Engine</h2>
+            <p className="text-[11px] text-slate-400">
+              Provider, model, and response style for character chat
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+            Provider
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {CHAT_PROVIDERS.map((preset) => {
+              const selected = settings.chatProvider === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleChatProviderChange(preset.id)}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    selected
+                      ? 'bg-violet-950/40 border-violet-400 text-white shadow-sm'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Server
+                      className={`w-3.5 h-3.5 ${selected ? 'text-violet-400' : 'text-slate-500'}`}
+                    />
+                    <span className="text-xs font-bold">{preset.shortLabel}</span>
+                  </span>
+                  <span className="block text-[10px] text-slate-400 mt-1 leading-snug">
+                    {preset.id === 'gemini'
+                      ? 'Server key, strongest prose'
+                      : preset.id === 'ollama'
+                      ? 'Local & uncensored'
+                      : preset.id === 'openai'
+                      ? 'OpenRouter / LM Studio'
+                      : 'On-device WebGPU inference'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            {CHAT_PROVIDER_PRESETS[settings.chatProvider]?.hint}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+              {settings.chatProvider === 'webllm' ? 'Model (read-only)' : 'Model'}
+            </label>
+            <input
+              type="text"
+              value={settings.chatModel}
+              onChange={
+                settings.chatProvider === 'webllm'
+                  ? undefined
+                  : (e) => onUpdateSettings({ chatModel: e.target.value })
+              }
+              readOnly={settings.chatProvider === 'webllm'}
+              placeholder={CHAT_PROVIDER_PRESETS[settings.chatProvider]?.model}
+              className={`w-full bg-slate-950 text-xs rounded-lg px-3 py-2 border border-slate-800 font-mono ${
+                settings.chatProvider === 'webllm'
+                  ? 'text-slate-400 cursor-not-allowed'
+                  : 'text-slate-200 focus:border-violet-400 focus:outline-none'
+              }`}
+            />
+            {settings.chatProvider === 'webllm' && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Choose the WebLLM model in Local Models.
+              </p>
+            )}
+          </div>
+
+          {settings.chatProvider !== 'gemini' && settings.chatProvider !== 'webllm' && (
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                Endpoint
+              </label>
+              <input
+                type="text"
+                value={settings.chatEndpoint}
+                onChange={(e) => onUpdateSettings({ chatEndpoint: e.target.value })}
+                placeholder={CHAT_PROVIDER_PRESETS[settings.chatProvider]?.endpoint}
+                className="w-full bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+              />
+            </div>
+          )}
+        </div>
+
+        {settings.chatProvider === 'openai' && (
+          <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+            <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+              Provider API key (stored in this browser only)
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={chatKeyDraft}
+                onChange={(e) => setChatKeyDraft(e.target.value)}
+                placeholder="sk-or-v1-..."
+                className="flex-1 bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+              />
+              <button
+                type="button"
+                onClick={handleSaveChatKey}
+                className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1"
+              >
+                {chatKeySaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : null}
+                <span>{chatKeySaved ? 'Saved' : 'Save Key'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              The key is sent with each chat request from your own app server. Never commit it to
+              the repo.
+            </p>
+          </div>
+        )}
+
+        {settings.chatProvider === 'ollama' && (
+          <p className="text-[10px] text-slate-500 font-mono">
+            Tip: `ollama pull llama3.2` then keep `ollama serve` running. Use an uncensored model
+            for unrestricted mature roleplay.
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          <div>
+            <label className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+              <span className="flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                Temperature
+              </span>
+              <span className="font-mono text-slate-300">
+                {settings.chatTemperature.toFixed(2)}
+              </span>
+            </label>
+            <input
+              type="range"
+              min={0.5}
+              max={1.2}
+              step={0.05}
+              value={settings.chatTemperature}
+              onChange={(e) =>
+                onUpdateSettings({ chatTemperature: parseFloat(e.target.value) })
+              }
+              className="w-full accent-violet-500"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Higher is more varied; lower is more consistent.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+              Reply length
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {REPLY_LENGTHS.map((option) => {
+                const selected = settings.chatReplyLength === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => handleReplyLengthChange(option.id)}
+                    className={`px-2 py-2 rounded-lg border text-center transition-all ${
+                      selected
+                        ? 'bg-violet-950/50 border-violet-400 text-white'
+                        : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="block text-[11px] font-bold">{option.label}</span>
+                    <span className="block text-[9px] text-slate-500 mt-0.5">{option.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Local fallback: keeps chat alive on a free model when the paid
+            provider has no credits, no key, or is rate limited. */}
+        <div className="pt-3 border-t border-slate-800 space-y-2.5">
+          <label className="flex items-start justify-between gap-3 cursor-pointer">
+            <span>
+              <span className="block text-xs font-semibold text-slate-200">
+                Fall back to a local model
+              </span>
+              <span className="block text-[10px] text-slate-500 mt-0.5">
+                If the provider fails before replying (no credits, bad key, rate limit), retry
+                once on Ollama. Requires Ollama running where this app is served.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={settings.chatFallbackEnabled === true}
+              onChange={(e) => {
+                haptic.trigger('selection');
+                onUpdateSettings({ chatFallbackEnabled: e.target.checked });
+              }}
+              className="mt-0.5 w-4 h-4 accent-violet-500 shrink-0"
+            />
+          </label>
+
+          {settings.chatFallbackEnabled && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Local endpoint
+                </label>
+                <input
+                  type="text"
+                  value={settings.chatFallbackEndpoint}
+                  onChange={(e) => onUpdateSettings({ chatFallbackEndpoint: e.target.value })}
+                  placeholder="http://localhost:11434"
+                  className="w-full bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Local model
+                </label>
+                <input
+                  type="text"
+                  value={settings.chatFallbackModel}
+                  onChange={(e) => onUpdateSettings({ chatFallbackModel: e.target.value })}
+                  placeholder="llama3.2"
+                  className="w-full bg-slate-950 text-slate-200 text-xs rounded-lg px-3 py-2 border border-slate-800 focus:border-violet-400 focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -427,6 +790,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       </div>
+
+      <AgeGateModal
+        isOpen={showChatAgeGate}
+        onClose={() => setShowChatAgeGate(false)}
+        onConfirm={handleConfirmChatAge}
+      />
     </div>
   );
 };
