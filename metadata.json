@@ -1,0 +1,6 @@
+{
+  "name": "NoMan AI",
+  "description": "Completely free AI image and video generator studio with Hugging Face models, video extensions, image-to-video conversion, local WebGPU model support, iOS mobile touch UI, and customizable studio settings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
