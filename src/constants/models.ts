@@ -2,10 +2,16 @@ import type { CustomModel, AspectRatio, MotionStyle } from '../types';
 import { MEDIA_PROVIDERS, createPresetModels } from '../providers/catalog';
 
 /** Providers that live behind an API key; their presets are generated from the catalog. */
-const KEYED_PROVIDER_IDS = ['leonardo', 'replicate', 'byteplus', 'cloudflare', 'openai'];
+const CATALOG_PROVIDER_IDS = [
+  'leonardo',
+  'replicate',
+  'byteplus',
+  'cloudflare',
+  'openai',
+];
 
-const KEYED_PROVIDER_MODELS: CustomModel[] = MEDIA_PROVIDERS.filter((provider) =>
-  KEYED_PROVIDER_IDS.includes(provider.id)
+const CATALOG_PROVIDER_MODELS: CustomModel[] = MEDIA_PROVIDERS.filter((provider) =>
+  CATALOG_PROVIDER_IDS.includes(provider.id)
 ).flatMap((provider) => createPresetModels(provider));
 
 export const DEFAULT_PRESET_MODELS: CustomModel[] = [
@@ -118,7 +124,7 @@ export const DEFAULT_PRESET_MODELS: CustomModel[] = [
   },
 
   // Hosted API providers (keys in Settings → Generation Providers)
-  ...KEYED_PROVIDER_MODELS,
+  ...CATALOG_PROVIDER_MODELS,
 
   // Video Models
   {

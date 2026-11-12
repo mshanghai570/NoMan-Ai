@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { GenerationItem, MotionStyle, UserSettings } from '../types';
+import type { AIProvider, GenerationItem, MotionStyle, UserSettings } from '../types';
 import { MOTION_STYLES } from '../constants/models';
 import { VideoEngine } from '../services/videoEngine';
 import { ImageGeneratorService } from '../services/imageGenerator';
+import { MEDIA_PROVIDERS } from '../providers/catalog';
 import { ProviderAgentSetupModal } from './ProviderAgentSetupModal';
 import {
   Video,
@@ -135,6 +136,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
   const [renderedItem, setRenderedItem] = useState<GenerationItem | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLooping, setIsLooping] = useState(true);
@@ -362,33 +364,87 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
     setIsRendering(true);
     setRenderProgress(10);
     setIsSaved(false);
+    setRenderError(null);
 
     try {
-      // Step 1: Generate high fidelity photorealistic keyframe with negative prompt
-      const keyframe = await ImageGeneratorService.generateImage({
-        prompt: `${textPrompt}, cinematic widescreen frame, 8k, dynamic composition, photorealistic direct lighting, sharp focus`,
-        negativePrompt: negativePrompt.trim() || undefined,
-        model: 'flux-realism',
-        provider: 'pollinations',
-        aspectRatio: '16:9',
-        width: 1280,
-        height: 720,
-        seed: Math.floor(Math.random() * 999999),
-        realismBoost: true,
-      });
+      const selectedProvider = settings.videoExecutionMethod === 'cloud'
+        ? settings.videoCloudProvider
+        : 'pollinations';
+      const providerDefinition = MEDIA_PROVIDERS.find((provider) => provider.id === selectedProvider);
+      const configuredVideoModel = settings.customModels.find(
+        (model) =>
+          model.provider === selectedProvider &&
+          (model.type === 'video' || model.type === 'both') &&
+          !['noman-motion-engine', 'webgpu-neural-motion'].includes(model.id)
+      )?.id;
+      const videoModel =
+        configuredVideoModel ||
+        (selectedProvider === 'pollinations'
+          ? 'wan'
+          : selectedProvider === 'byteplus'
+          ? 'seedance-1-0-pro-250528'
+          : '');
 
-      setRenderProgress(35);
+      let result: { videoUrl: string; duration: number; seed: number };
+      let thumbnailUrl: string | undefined;
+      let generationProvider: AIProvider = selectedProvider as AIProvider;
+      let generationModel = videoModel;
 
-      // Step 2: Render motion video
-      const result = await VideoEngine.renderImageToVideo({
-        imageUrl: keyframe.imageUrl,
-        motionStyle,
-        duration,
-        prompt: textPrompt,
-        negativePrompt: negativePrompt.trim() || undefined,
-        fps: 30,
-        onProgress: (p) => setRenderProgress(35 + Math.round(p * 0.65)),
-      });
+      if (settings.videoExecutionMethod === 'cloud') {
+        if (!providerDefinition?.supports.includes('video')) {
+          throw new Error(
+            `${providerDefinition?.label || selectedProvider} does not advertise video generation.`
+          );
+        }
+        if (!videoModel) {
+          throw new Error(
+            `Add a video model for ${providerDefinition.label} in Settings → Custom Models before using it.`
+          );
+        }
+
+        const cloudResult = await ImageGeneratorService.generateVideo({
+          prompt: textPrompt,
+          negativePrompt: negativePrompt.trim() || undefined,
+          model: videoModel,
+          provider: selectedProvider as AIProvider,
+          aspectRatio: '16:9',
+          width: 1280,
+          height: 720,
+          duration,
+          seed: Math.floor(Math.random() * 999999),
+          providerKeys: settings.providerKeys,
+          providerBaseUrls: settings.providerBaseUrls,
+          customProvider: settings.customProvider,
+        });
+        result = { ...cloudResult, duration };
+      } else {
+        // Local fallback: create a keyframe, then render a deterministic motion clip.
+        const keyframe = await ImageGeneratorService.generateImage({
+          prompt: `${textPrompt}, cinematic widescreen frame, 8k, dynamic composition, photorealistic direct lighting, sharp focus`,
+          negativePrompt: negativePrompt.trim() || undefined,
+          model: 'flux-realism',
+          provider: 'pollinations',
+          aspectRatio: '16:9',
+          width: 1280,
+          height: 720,
+          seed: Math.floor(Math.random() * 999999),
+          realismBoost: true,
+        });
+        thumbnailUrl = keyframe.imageUrl;
+        generationProvider = 'pollinations';
+        generationModel = 'noman-motion-engine';
+        setRenderProgress(35);
+
+        result = await VideoEngine.renderImageToVideo({
+          imageUrl: keyframe.imageUrl,
+          motionStyle,
+          duration,
+          prompt: textPrompt,
+          negativePrompt: negativePrompt.trim() || undefined,
+          fps: 30,
+          onProgress: (p) => setRenderProgress(35 + Math.round(p * 0.65)),
+        }).then((rendered) => ({ ...rendered, seed: keyframe.seed }));
+      }
 
       setRenderedVideoUrl(result.videoUrl);
       const newItem: GenerationItem = {
@@ -397,15 +453,18 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
         type: 'video',
         prompt: textPrompt,
         negativePrompt: negativePrompt.trim() || undefined,
-        model: 'noman-motion-engine',
-        modelLabel: 'NoMan Text-to-Video v2.4',
-        provider: 'pollinations',
+        model: generationModel || 'custom-video',
+        modelLabel:
+          settings.videoExecutionMethod === 'cloud'
+            ? providerDefinition?.label || 'Cloud video provider'
+            : 'NoMan Text-to-Video v2.4',
+        provider: generationProvider,
         aspectRatio: '16:9',
         width: 1280,
         height: 720,
         mediaUrl: result.videoUrl,
-        thumbnailUrl: keyframe.imageUrl,
-        seed: keyframe.seed,
+        thumbnailUrl,
+        seed: result.seed,
         steps: 30,
         cfgScale: 7.0,
         createdAt: Date.now(),
@@ -415,7 +474,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
           duration: result.duration,
           fps: 30,
           motionStyle,
-          sourceImageUrl: keyframe.imageUrl,
+          ...(thumbnailUrl ? { sourceImageUrl: thumbnailUrl } : {}),
         },
       };
 
@@ -427,6 +486,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
       }
     } catch (e) {
       console.error('Text to video error:', e);
+      setRenderError(e instanceof Error ? e.message : 'Video generation failed.');
       haptic.trigger('warning');
     } finally {
       setIsRendering(false);
@@ -457,8 +517,14 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
               </span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Convert static imagery into dynamic motion, extend timelines seamlessly, and generate continuous cinematic video clips.
+              Generate text-to-video through a configured cloud adapter, or use the local canvas renderer for image-to-video and timeline extension.
             </p>
+            {renderError && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-[11px] text-rose-200">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
+                <span>{renderError}</span>
+              </div>
+            )}
           </div>
 
           {/* Provider / Execution Agent Pill */}

@@ -285,3 +285,63 @@ test('provider errors surface the upstream message', async () => {
     }
   );
 });
+
+test('unsupported media kinds are rejected before an adapter is called', async () => {
+  let called = false;
+  await withFetch(
+    async () => {
+      called = true;
+      return jsonResponse({});
+    },
+    async () => {
+      await assert.rejects(
+        generateWithProvider({
+          provider: 'leonardo',
+          kind: 'video',
+          prompt: 'a cinematic shot',
+          credentials: { key: 'k' },
+        }),
+        (error: unknown) =>
+          error instanceof ProviderError &&
+          error.status === 400 &&
+          /does not advertise video/.test(error.message)
+      );
+    }
+  );
+  assert.equal(called, false);
+});
+
+test('custom provider cannot target localhost by default', async () => {
+  let called = false;
+  await withFetch(
+    async () => {
+      called = true;
+      return jsonResponse({});
+    },
+    async () => {
+      await assert.rejects(
+        generateWithProvider({
+          provider: 'custom',
+          kind: 'image',
+          prompt: 'a test image',
+          custom: {
+            enabled: true,
+            label: 'Local relay',
+            baseUrl: 'http://127.0.0.1:8188/generate',
+            model: 'test',
+            apiKey: '',
+            kind: 'image',
+            bodyTemplate: '{"prompt":"{{prompt}}"}',
+            headers: '{}',
+            resultPath: 'url',
+          },
+        }),
+        (error: unknown) =>
+          error instanceof ProviderError &&
+          error.status === 400 &&
+          /private or loopback/.test(error.message)
+      );
+    }
+  );
+  assert.equal(called, false);
+});

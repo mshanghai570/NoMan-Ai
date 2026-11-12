@@ -19,10 +19,10 @@ interface FakeResponse extends EventEmitter {
   end(chunk?: string): void;
 }
 
-function createRequest(url: string): FakeRequest {
+function createRequest(url: string, method = 'POST'): FakeRequest {
   const request = new EventEmitter() as FakeRequest;
   request.url = url;
-  request.method = 'POST';
+  request.method = method;
   return request;
 }
 
@@ -44,7 +44,7 @@ function createResponse(): FakeResponse {
 }
 
 async function postJson(url: string, body: unknown): Promise<FakeResponse> {
-  const request = createRequest(url);
+  const request = createRequest(url, 'POST');
   const response = createResponse();
   const handling = handleApiRequest(
     request as IncomingMessage,
@@ -53,6 +53,18 @@ async function postJson(url: string, body: unknown): Promise<FakeResponse> {
   request.emit('data', JSON.stringify(body));
   request.emit('end');
   assert.equal(await handling, true);
+  return response;
+}
+async function getJson(url: string): Promise<FakeResponse> {
+  const request = createRequest(url, 'GET');
+  const response = createResponse();
+  assert.equal(
+    await handleApiRequest(
+      request as IncomingMessage,
+      response as unknown as ServerResponse
+    ),
+    true
+  );
   return response;
 }
 
@@ -180,4 +192,13 @@ test('generate-theme endpoint returns structured theme with colors and typograph
   assert.ok(data.theme.colors.background);
   assert.ok(data.theme.colors.primaryAccent);
   assert.ok(data.theme.typography.fontFamily);
+});
+
+test('provider status is derived from the catalog and exposes capability metadata', async () => {
+  const response = await getJson('/api/providers');
+  assert.equal(response.statusCode, 200);
+  const data = JSON.parse(response.output);
+  assert.equal(data.readiness.pollinations.keyless, true);
+  assert.deepEqual(data.readiness.byteplus.supports, ['image', 'video']);
+  assert.equal(typeof data.providers.custom, 'boolean');
 });

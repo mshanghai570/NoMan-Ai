@@ -28,7 +28,7 @@ export const CHAT_PROVIDER_PRESETS: Record<ChatProvider, ChatProviderPreset> = {
     model: 'kilo-auto/free',
     endpoint: 'https://ai-gateway.kilo.ai/api/v1',
     requiresKey: false,
-    hint: 'Kilo Gateway provides free models (Auto Free tier, Llama 3.3, DeepSeek) and custom agent modes (Character, Narrator, DM).',
+    hint: 'Kilo Gateway provides free, rate-limited model routes plus custom agent modes (Character, Narrator, DM). Provider policy still applies; use Ollama or another permitted local endpoint when you need full control.',
   },
   ollama: {
     id: 'ollama',

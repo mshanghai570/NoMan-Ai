@@ -26,6 +26,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { haptic } from '../utils/haptics';
+import { MEDIA_PROVIDERS } from '../providers/catalog';
 
 interface ProviderAgentSetupModalProps {
   isOpen: boolean;
@@ -142,6 +143,8 @@ export const ProviderAgentSetupModal: React.FC<ProviderAgentSetupModalProps> = (
           ? 'gemini-imagen-realism'
           : imageCloud === 'huggingface'
           ? 'black-forest-labs/FLUX.1-schnell'
+          : imageCloud === 'perchance'
+          ? 'perchance-image-api'
           : 'flux-realism',
     });
 
@@ -315,6 +318,12 @@ export const ProviderAgentSetupModal: React.FC<ProviderAgentSetupModalProps> = (
                           name: 'FLUX Realism Studio',
                           sub: 'Free Pollinations Cloud',
                           desc: 'No-key required raw photography & FLUX Schnell.',
+                        },
+                        {
+                          id: 'perchance' as ImageCloudProvider,
+                          name: 'Perchance Image API',
+                          sub: 'Official browser workflow',
+                          desc: 'Uses Perchance’s documented iframe API; no server key or scraping.',
                         },
                         {
                           id: 'huggingface' as ImageCloudProvider,
@@ -607,35 +616,21 @@ export const ProviderAgentSetupModal: React.FC<ProviderAgentSetupModalProps> = (
                     <label className="block text-xs font-semibold text-slate-200 mb-2">
                       Select Cloud Video Engine
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[
-                        {
-                          id: 'pollinations' as VideoCloudProvider,
-                          name: 'NoMan Motion 60 FPS',
-                          sub: 'Flagship Cinematic Cloud',
-                          desc: 'Dynamic pan, zoom, orbit & seamless multi-scene extensions.',
-                        },
-                        {
-                          id: 'huggingface' as VideoCloudProvider,
-                          name: 'HF · Stable Video Diff',
-                          sub: 'SVD-XT Cloud Endpoint',
-                          desc: 'Image-to-video diffusion with your Hugging Face token.',
-                        },
-                        {
-                          id: 'gemini' as VideoCloudProvider,
-                          name: 'Gemini Omni Video',
-                          sub: 'Interactions Video Lab',
-                          desc: 'Next-gen video generation and extension engine.',
-                        },
-                      ].map((prov) => {
-                        const isSel = videoCloud === prov.id;
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {MEDIA_PROVIDERS.filter(
+                        (provider) =>
+                          provider.supports.includes('video') &&
+                          ['pollinations', 'replicate', 'byteplus', 'custom'].includes(provider.id)
+                      ).map((prov) => {
+                        const providerId = prov.id as VideoCloudProvider;
+                        const isSel = videoCloud === providerId;
                         return (
                           <button
-                            key={prov.id}
+                            key={providerId}
                             type="button"
                             onClick={() => {
                               haptic.trigger('selection');
-                              setVideoCloud(prov.id);
+                              setVideoCloud(providerId);
                             }}
                             className={`p-3 rounded-xl border text-left transition-all ${
                               isSel
@@ -643,9 +638,9 @@ export const ProviderAgentSetupModal: React.FC<ProviderAgentSetupModalProps> = (
                                 : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
                             }`}
                           >
-                            <span className="text-xs font-bold block text-white">{prov.name}</span>
-                            <span className="text-[10px] text-cyan-400 font-mono block mt-0.5">{prov.sub}</span>
-                            <span className="text-[10px] text-slate-400 block mt-1">{prov.desc}</span>
+                            <span className="text-xs font-bold block text-white">{prov.label}</span>
+                            <span className="text-[10px] text-cyan-400 font-mono block mt-0.5">{prov.id}</span>
+                            <span className="text-[10px] text-slate-400 block mt-1">{prov.blurb}</span>
                           </button>
                         );
                       })}

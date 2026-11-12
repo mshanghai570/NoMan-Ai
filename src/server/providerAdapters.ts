@@ -10,7 +10,11 @@
  * because most hosted APIs are submit-then-poll.
  */
 import type { CustomProviderConfig } from '../types';
-import type { MediaKind, MediaProviderId } from '../providers/catalog';
+import {
+  getMediaProvider,
+  type MediaKind,
+  type MediaProviderId,
+} from '../providers/catalog.ts';
 
 const POLL_INTERVAL_MS = 2_500;
 const POLL_TIMEOUT_MS = 240_000;
@@ -36,9 +40,12 @@ export interface ProviderGenerateInput {
   model?: string;
   kind: MediaKind;
   prompt: string;
+  /** Optional public/data URL for adapters that document image-guided video. */
+  imageUrl?: string;
   negativePrompt?: string;
   width?: number;
   height?: number;
+  duration?: number;
   aspectRatio?: string;
   seed?: number;
   steps?: number;
@@ -55,30 +62,22 @@ export interface ProviderGenerateResult {
   kind: MediaKind;
 }
 
-const ENV_KEYS: Partial<Record<MediaProviderId, string>> = {
-  huggingface: 'HUGGINGFACE_API_KEY',
-  leonardo: 'LEONARDO_API_KEY',
-  replicate: 'REPLICATE_API_TOKEN',
-  byteplus: 'BYTEPLUS_API_KEY',
-  cloudflare: 'CLOUDFLARE_API_TOKEN',
-  openai: 'OPENAI_IMAGE_API_KEY',
-};
-
 export const providerEnvVar = (provider: MediaProviderId): string | undefined =>
-  ENV_KEYS[provider];
+  getMediaProvider(provider)?.envVar;
 
 export const hasServerKey = (provider: MediaProviderId): boolean => {
-  const envVar = ENV_KEYS[provider];
+  const envVar = providerEnvVar(provider);
   if (!envVar) return false;
   const value = process.env[envVar];
   return typeof value === 'string' && value.trim().length > 0;
 };
 
 const requireKey = (supplied: string | undefined, provider: MediaProviderId, label: string) => {
-  const key = supplied?.trim() || process.env[ENV_KEYS[provider] || '']?.trim();
+  const envVar = providerEnvVar(provider);
+  const key = supplied?.trim() || (envVar ? process.env[envVar]?.trim() : '');
   if (!key) {
     throw new ProviderError(
-      `No API key for ${label}. Add ${ENV_KEYS[provider] || 'a key'} to the server environment, or paste a key in Settings → Generation Providers.`,
+      `No API key for ${label}. Add ${envVar || 'a key'} to the server environment, or paste a key in Settings → Generation Providers.`,
       400
     );
   }
@@ -91,6 +90,47 @@ const authHeaders = (key: string): Record<string, string> => ({
   Authorization: `Bearer ${key}`,
   'Content-Type': 'application/json',
 });
+
+/**
+ * Provider base URLs and custom poll URLs are server-side fetch targets. Block
+ * obvious private-network targets unless an operator explicitly opts in, so a
+ * public deployment cannot be turned into a basic SSRF proxy from Settings.
+ */
+const assertSafeOutboundUrl = (value: string, label: string): string => {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ProviderError(`${label} must be a valid absolute HTTP(S) URL.`, 400);
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ProviderError(`${label} must use http:// or https://.`, 400);
+  }
+
+  if (process.env.ALLOW_PRIVATE_PROVIDER_URLS === 'true') return parsed.toString();
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const isPrivateIp =
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname.startsWith('127.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    hostname.startsWith('169.254.') ||
+    hostname.endsWith('.local');
+
+  if (isPrivateIp) {
+    throw new ProviderError(
+      `${label} points to a private or loopback address. Set ALLOW_PRIVATE_PROVIDER_URLS=true only for a trusted local deployment.`,
+      400
+    );
+  }
+
+  return parsed.toString();
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -116,7 +156,7 @@ const extractError = (payload: any): string | null => {
 };
 
 async function fetchJson(url: string, init: RequestInit, signal?: AbortSignal): Promise<any> {
-  const response = await fetch(url, { ...init, signal });
+  const response = await fetch(assertSafeOutboundUrl(url, 'Provider URL'), { ...init, signal });
   const text = await response.text();
   let parsed: any = null;
   try {
@@ -222,7 +262,12 @@ const resolveSeed = (seed?: number) =>
   typeof seed === 'number' && seed > 0 ? seed : Math.floor(Math.random() * 99_999_999);
 
 const resolveBase = (input: ProviderGenerateInput, fallback: string) =>
-  normalizeBase(input.credentials?.baseUrl?.trim() || fallback);
+  normalizeBase(
+    assertSafeOutboundUrl(
+      input.credentials?.baseUrl?.trim() || fallback,
+      'Provider base URL'
+    )
+  );
 
 const substituteTemplate = (template: string, variables: Record<string, string | number>) =>
   template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
@@ -382,7 +427,8 @@ const generateBytePlus: Adapter = async (input, signal) => {
   }
 
   const ratio = input.aspectRatio || sizeToAspectRatio(width, height);
-  const text = `${input.prompt} --ratio ${ratio} --duration 5 --watermark false`;
+  const duration = Math.min(Math.max(input.duration ?? 5, 1), 10);
+  const text = `${input.prompt} --ratio ${ratio} --duration ${duration} --watermark false`;
   const submit = await fetchJson(
     `${base}/api/v3/contents/generations/tasks`,
     {
@@ -437,7 +483,10 @@ const generateCloudflare: Adapter = async (input, signal) => {
   }
 
   const response = await fetch(
-    `${base}/accounts/${accountId}/ai/run/${model.replace(/^\/+/, '')}`,
+    assertSafeOutboundUrl(
+      `${base}/accounts/${accountId}/ai/run/${model.replace(/^\/+/, '')}`,
+      'Cloudflare provider URL'
+    ),
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -558,6 +607,7 @@ const generateCustom: Adapter = async (input, signal) => {
     negative_prompt: input.negativePrompt || '',
     width: input.width ?? 1024,
     height: input.height ?? 1024,
+    duration: Math.min(Math.max(input.duration ?? 5, 1), 10),
     aspect_ratio: input.aspectRatio || sizeToAspectRatio(input.width, input.height),
     seed,
     model,
@@ -656,6 +706,23 @@ export async function generateWithProvider(
   input: ProviderGenerateInput,
   signal?: AbortSignal
 ): Promise<ProviderGenerateResult> {
+  const definition = getMediaProvider(input.provider);
+  if (!definition) {
+    throw new ProviderError(`Unknown media provider "${input.provider}".`, 400);
+  }
+  if (!definition.supports.includes(input.kind)) {
+    throw new ProviderError(
+      `${definition.label} does not advertise ${input.kind} generation. Choose a compatible model or use a custom workflow.`,
+      400
+    );
+  }
+  if (!input.prompt?.trim()) {
+    throw new ProviderError('A non-empty prompt is required.', 400);
+  }
+  if (input.prompt.length > 20_000) {
+    throw new ProviderError('Prompt is too long. Keep it under 20,000 characters.', 400);
+  }
+
   const adapter = providerAdapters[input.provider];
   if (!adapter) {
     throw new ProviderError(

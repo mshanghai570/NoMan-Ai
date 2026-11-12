@@ -13,6 +13,7 @@ export type MediaKind = 'image' | 'video';
 export type MediaProviderId = Extract<
   AIProvider,
   | 'pollinations'
+  | 'perchance'
   | 'huggingface'
   | 'leonardo'
   | 'replicate'
@@ -59,15 +60,33 @@ export const MEDIA_PROVIDERS: MediaProviderDefinition[] = [
   {
     id: 'pollinations',
     label: 'Pollinations',
-    blurb: 'Keyless FLUX / SDXL endpoints. Unlimited, no account.',
-    supports: ['image'],
+    blurb: 'Direct image/video routes. Live model capabilities, safety, and auth vary.',
+    supports: ['image', 'video'],
     keyless: true,
+    docsUrl: 'https://gen.pollinations.ai/docs',
     models: [
       { id: 'flux', label: 'FLUX Schnell', type: 'image' },
       { id: 'flux-realism', label: 'FLUX Realism', type: 'image' },
       { id: 'flux-anime', label: 'FLUX Anime', type: 'image' },
       { id: 'turbo', label: 'SDXL Turbo', type: 'image' },
       { id: 'deliberate', label: 'Deliberate v2', type: 'image' },
+      { id: 'wan', label: 'WAN Video', type: 'video', note: 'Use only if present in the live model catalog' },
+    ],
+  },
+  {
+    id: 'perchance',
+    label: 'Perchance Official Image API',
+    blurb: 'Browser iframe API with permanent hosted image URLs; no server key required.',
+    supports: ['image'],
+    keyless: true,
+    docsUrl: 'https://perchance.org/perchance-ai-api',
+    models: [
+      {
+        id: 'perchance-image-api',
+        label: 'Perchance Image API',
+        type: 'image',
+        note: 'Runs in the browser through the documented iframe/postMessage API',
+      },
     ],
   },
   {
@@ -88,8 +107,8 @@ export const MEDIA_PROVIDERS: MediaProviderDefinition[] = [
   {
     id: 'leonardo',
     label: 'Leonardo.Ai',
-    blurb: 'One key for FLUX, Seedream, Nano Banana and Seedance video.',
-    supports: ['image', 'video'],
+    blurb: 'One key for FLUX, Seedream, and Nano Banana image generation.',
+    supports: ['image'],
     envVar: 'LEONARDO_API_KEY',
     keyLabel: 'Leonardo API key',
     docsUrl: 'https://docs.leonardo.ai',
@@ -101,12 +120,6 @@ export const MEDIA_PROVIDERS: MediaProviderDefinition[] = [
       { id: 'seedream-4.0', label: 'Seedream 4.0', type: 'image', note: 'ByteDance' },
       { id: 'seedream-4.5', label: 'Seedream 4.5', type: 'image', note: 'ByteDance' },
       { id: 'gemini-2.5-flash-image', label: 'Nano Banana', type: 'image' },
-      {
-        id: 'bytedance/seedance-2.5',
-        label: 'Seedance 2.5',
-        type: 'video',
-        note: 'ByteDance video',
-      },
     ],
   },
   {

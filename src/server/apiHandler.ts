@@ -12,7 +12,7 @@ import {
   summarizeConversation,
 } from './roleplayEngine.ts';
 import { generateWithProvider, hasServerKey, ProviderError } from './providerAdapters.ts';
-import type { MediaProviderId } from '../providers/catalog.ts';
+import { MEDIA_PROVIDERS, type MediaProviderId } from '../providers/catalog.ts';
 
 // Initialize Gemini client with aistudio-build telemetry header
 const getGeminiClient = () => {
@@ -921,22 +921,32 @@ Strictly respond with JSON matching this structure:
 
   // 1i. Media provider registry: status and generation for every configured provider
   if (url === '/api/providers' && req.method === 'GET') {
-    const providerIds: MediaProviderId[] = [
-      'leonardo',
-      'replicate',
-      'byteplus',
-      'cloudflare',
-      'openai',
-      'huggingface',
-    ];
+    const providerIds = MEDIA_PROVIDERS.map((provider) => provider.id) as MediaProviderId[];
     const providers: Record<string, boolean> = {};
-    for (const id of providerIds) providers[id] = hasServerKey(id);
+    const readiness: Record<string, {
+      supports: string[];
+      keyless: boolean;
+      serverKeyConfigured: boolean;
+      accountIdConfigured: boolean;
+    }> = {};
+
+    for (const provider of MEDIA_PROVIDERS) {
+      providers[provider.id] = provider.keyless === true || hasServerKey(provider.id);
+      readiness[provider.id] = {
+        supports: provider.supports,
+        keyless: provider.keyless === true,
+        serverKeyConfigured: hasServerKey(provider.id),
+        accountIdConfigured:
+          provider.id !== 'cloudflare' || Boolean(process.env.CLOUDFLARE_ACCOUNT_ID?.trim()),
+      };
+    }
 
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(
       JSON.stringify({
         providers,
+        readiness,
         cloudflareAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
       })
     );
@@ -956,6 +966,13 @@ Strictly respond with JSON matching this structure:
 
     const provider = typeof body?.provider === 'string' ? body.provider : '';
     const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+    const kind = body.kind === 'video' ? 'video' : 'image';
+    const boundedNumber = (value: unknown, fallback: number, min: number, max: number) => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+      return Math.min(max, Math.max(min, value));
+    };
+    const width = boundedNumber(body.width, 1024, 256, 4096);
+    const height = boundedNumber(body.height, 1024, 256, 4096);
     if (!provider || !prompt) {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json');
@@ -966,24 +983,23 @@ Strictly respond with JSON matching this structure:
     const controller = new AbortController();
     res.on('close', () => controller.abort());
 
-    const num = (value: unknown, fallback: number) =>
-      typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-
     try {
       const result = await generateWithProvider(
         {
           provider: provider as MediaProviderId,
           model: typeof body.model === 'string' ? body.model : undefined,
-          kind: body.kind === 'video' ? 'video' : 'image',
+          kind,
           prompt,
+          imageUrl: typeof body.imageUrl === 'string' ? body.imageUrl : undefined,
           negativePrompt:
             typeof body.negativePrompt === 'string' ? body.negativePrompt : undefined,
-          width: num(body.width, 1024),
-          height: num(body.height, 1024),
+          width,
+          height,
+          duration: boundedNumber(body.duration, 5, 1, 10),
           aspectRatio: typeof body.aspectRatio === 'string' ? body.aspectRatio : undefined,
-          seed: num(body.seed, 0),
-          steps: num(body.steps, 0) || undefined,
-          cfgScale: num(body.cfgScale, 0) || undefined,
+          seed: boundedNumber(body.seed, 0, 0, 99_999_999),
+          steps: boundedNumber(body.steps, 0, 0, 150) || undefined,
+          cfgScale: boundedNumber(body.cfgScale, 0, 0, 30) || undefined,
           credentials: {
             key: typeof body.credentials?.key === 'string' ? body.credentials.key : undefined,
             accountId:

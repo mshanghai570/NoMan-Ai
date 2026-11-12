@@ -7,6 +7,7 @@ import type {
   UserSettings,
 } from '../types';
 import { DEFAULT_PRESET_MODELS } from '../constants/models';
+import { MEDIA_PROVIDERS } from '../providers/catalog';
 
 const STORAGE_KEYS = {
   USER: 'noman_user_profile',
@@ -200,9 +201,17 @@ export const getStoredSettings = (): UserSettings => {
       const storedModels: CustomModel[] = merged.customModels || [];
       const knownIds = new Set(storedModels.map((model) => model.id));
       const missingPresets = DEFAULT_PRESET_MODELS.filter((model) => !knownIds.has(model.id));
+      const validVideoProviders = new Set(
+        MEDIA_PROVIDERS.filter((provider) => provider.supports.includes('video')).map(
+          (provider) => provider.id
+        )
+      );
 
       return {
         ...merged,
+        videoCloudProvider: validVideoProviders.has(merged.videoCloudProvider)
+          ? merged.videoCloudProvider
+          : DEFAULT_SETTINGS.videoCloudProvider,
         customModels: missingPresets.length
           ? [...storedModels, ...missingPresets]
           : storedModels,

@@ -413,15 +413,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="space-y-2">
                 <label className="block text-[11px] font-medium text-slate-400">Cloud Image Provider</label>
                 <select
-                  value={settings.imageCloudProvider || 'gemini'}
+                  value={settings.imageCloudProvider || 'pollinations'}
                   onChange={(e) => {
                     haptic.trigger('selection');
-                    onUpdateSettings({ imageCloudProvider: e.target.value as any });
+                    const provider = e.target.value as any;
+                    onUpdateSettings({
+                      imageCloudProvider: provider,
+                      ...(provider === 'perchance'
+                        ? { defaultProvider: 'perchance', defaultModel: 'perchance-image-api' }
+                        : {}),
+                    });
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
                 >
                   <option value="gemini">Gemini 3.1 Cloud (Ultra-Photorealism & Crisp Focus)</option>
                   <option value="pollinations">FLUX Ultra-Realism (Enhanced Raw Photography)</option>
+                  <option value="perchance">Perchance Official Image API (Browser)</option>
                   <option value="huggingface">Hugging Face Inference Router (Open Weights)</option>
                 </select>
 
@@ -552,13 +559,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
                 >
-                  <option value="pollinations">NoMan 60fps Dynamic Motion Engine</option>
-                  <option value="gemini">Gemini Cinematic Video Synthesis</option>
-                  <option value="huggingface">Hugging Face Stable Video Diffusion (SVD)</option>
+                  {MEDIA_PROVIDERS.filter(
+                    (provider) =>
+                      provider.supports.includes('video') &&
+                      ['pollinations', 'replicate', 'byteplus', 'custom'].includes(provider.id)
+                  ).map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
                 </select>
 
                 <p className="text-[10px] text-slate-500 pt-1">
-                  Processes smooth 30-60 FPS camera motion paths, extensions, and temporal frame interpolation in high fidelity.
+                  Cloud text-to-video uses the selected provider model. Image-to-video and timeline extension still use the local motion renderer unless a provider-specific workflow is added.
                 </p>
               </div>
             ) : (
@@ -783,7 +796,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                   <span className="block text-[10px] text-slate-400 mt-1 leading-snug">
                     {preset.id === 'kilo'
-                      ? 'Free models & Agent Modes'
+                      ? 'Free routes & Agent Modes'
                       : preset.id === 'gemini'
                       ? 'Server key, strongest prose'
                       : preset.id === 'ollama'
@@ -810,11 +823,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span>Kilo Free Models Catalog</span>
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                100% Free Tier
+                Free / rate-limited
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Select one of Kilo Gateway's completely free, uncensored models optimized for character roleplay and dialogue:
+              Select a Kilo Gateway free route for character roleplay and dialogue. Availability, rate limits, and provider safety policies still apply; this is not an uncensored guarantee.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -871,7 +884,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-slate-500">
-                Kilo auto-free models require no key. If you have an account or custom quota token from Kilo Code, paste it here.
+                Auto-free routing can work without a key. Add your Kilo key for account-level access or higher quota when available.
               </p>
             </div>
           </div>

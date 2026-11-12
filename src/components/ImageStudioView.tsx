@@ -412,6 +412,8 @@ export const ImageStudioView: React.FC<ImageStudioViewProps> = ({
                     ? 'Cloud · Gemini'
                     : settings.imageCloudProvider === 'huggingface'
                     ? 'Cloud · HF'
+                    : settings.imageCloudProvider === 'perchance'
+                    ? 'Cloud · Perchance'
                     : 'Cloud · FLUX'}
                 </span>
               </>

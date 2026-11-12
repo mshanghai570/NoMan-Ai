@@ -124,6 +124,7 @@ selecting WebLLM.
 | Provider | Needs | Notes |
 | --- | --- | --- |
 | Gemini | `GEMINI_API_KEY` on the server | Strongest prose; Google policy can still refuse explicit content |
+| Kilo Gateway | Optional Kilo key; free routes may work without one | OpenAI-compatible chat gateway with Character / Narrator / DM modes; quotas and upstream policy still apply |
 | Ollama | `ollama serve` + a pulled model | Fully local; use an uncensored model for unrestricted adult fiction |
 | OpenAI-compatible | Base endpoint + API key (browser only) | OpenRouter, LM Studio, vLLM, etc. |
 | WebLLM | A supported browser and a model explicitly downloaded in Local Models | Runs roleplay replies and memory summaries on-device with WebGPU; no network-provider fallback |

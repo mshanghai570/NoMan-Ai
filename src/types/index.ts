@@ -2,6 +2,7 @@ export type GenerationType = 'image' | 'video';
 
 export type AIProvider =
   | 'pollinations'
+  | 'perchance'
   | 'huggingface'
   | 'local'
   | 'webgpu'
@@ -14,9 +15,26 @@ export type AIProvider =
   | 'custom';
 
 export type ExecutionMethod = 'cloud' | 'local';
-export type ImageCloudProvider = 'gemini' | 'huggingface' | 'pollinations';
+export type ImageCloudProvider =
+  | 'gemini'
+  | 'huggingface'
+  | 'pollinations'
+  | 'perchance'
+  | 'leonardo'
+  | 'replicate'
+  | 'byteplus'
+  | 'cloudflare'
+  | 'openai'
+  | 'custom';
 export type ImageLocalProvider = 'comfyui' | 'sd-webui' | 'ollama' | 'webgpu';
-export type VideoCloudProvider = 'gemini' | 'huggingface' | 'pollinations';
+export type VideoCloudProvider =
+  | 'gemini'
+  | 'huggingface'
+  | 'pollinations'
+  | 'leonardo'
+  | 'replicate'
+  | 'byteplus'
+  | 'custom';
 export type VideoLocalProvider = 'webgpu' | 'comfyui' | 'sd-webui';
 
 export type AspectRatio = '1:1' | '9:16' | '16:9' | '4:3' | '3:4';
@@ -340,4 +358,3 @@ export interface PersonaConversation {
   messages: ChatMessage[];
   updatedAt: number;
 }
-

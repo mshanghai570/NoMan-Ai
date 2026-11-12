@@ -30,6 +30,134 @@ export interface GenerationParams {
   customProvider?: CustomProviderConfig;
 }
 
+export interface VideoGenerationParams {
+  prompt: string;
+  negativePrompt?: string;
+  model: string;
+  provider: AIProvider;
+  aspectRatio: AspectRatio;
+  width: number;
+  height: number;
+  seed: number;
+  duration?: number;
+  imageUrl?: string;
+  providerKeys?: Record<string, string>;
+  providerBaseUrls?: Record<string, string>;
+  customProvider?: CustomProviderConfig;
+}
+
+const PERCHANCE_IMAGE_API_URL = 'https://perchance.org/perchance-ai-api';
+
+const perchanceResolution = (width: number, height: number): string => {
+  if (width / height > 1.25) return '768x512';
+  if (height / width > 1.25) return '512x768';
+  return '768x768';
+};
+
+/** Build the documented Perchance Image API iframe URL (not an internal API URL). */
+export const buildPerchanceImageApiUrl = (params: {
+  prompt: string;
+  negativePrompt?: string;
+  width: number;
+  height: number;
+  seed: number;
+  cfgScale?: number;
+  requestId: string;
+}): string => {
+  const query = new URLSearchParams({
+    prompt: params.prompt,
+    format: 'json',
+    id: params.requestId,
+    resolution: perchanceResolution(params.width, params.height),
+    seed: String(params.seed),
+  });
+  if (params.negativePrompt?.trim()) query.set('negativePrompt', params.negativePrompt.trim());
+  if (typeof params.cfgScale === 'number' && Number.isFinite(params.cfgScale)) {
+    query.set('guidanceScale', String(Math.min(Math.max(params.cfgScale, 1), 30)));
+  }
+  return `${PERCHANCE_IMAGE_API_URL}?${query.toString()}`;
+};
+
+let perchanceWarmup: Promise<void> | null = null;
+
+const warmPerchanceBrowserSession = (): Promise<void> => {
+  if (perchanceWarmup) return perchanceWarmup;
+  perchanceWarmup = new Promise<void>((resolve) => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.tabIndex = -1;
+    frame.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:0;';
+    frame.onload = () => {
+      frame.remove();
+      resolve();
+    };
+    frame.onerror = () => {
+      frame.remove();
+      resolve();
+    };
+    frame.src = 'https://perchance.org/';
+    document.body.appendChild(frame);
+  });
+  return perchanceWarmup;
+};
+
+const generateWithPerchanceOfficialApi = async (params: GenerationParams, seed: number) => {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    throw new Error('Perchance Official Image API must run in the browser.');
+  }
+
+  await warmPerchanceBrowserSession();
+  const requestId = `noman_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const url = buildPerchanceImageApiUrl({
+    prompt: params.prompt.trim(),
+    negativePrompt: params.negativePrompt,
+    width: params.width,
+    height: params.height,
+    seed,
+    cfgScale: params.cfgScale,
+    requestId,
+  });
+
+  return new Promise<{ imageUrl: string; seed: number }>((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Perchance did not return an image before the browser timeout.'));
+    }, 120_000);
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('message', onMessage);
+      frame.remove();
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://perchance.org' || event.source !== frame.contentWindow) return;
+      const message = event.data;
+      const result = message?.api === 'perchance-image-api' ? message.result : undefined;
+      if (!result || result.id !== requestId) return;
+      cleanup();
+      if (!result.ok) {
+        reject(new Error(result.error || 'Perchance image generation failed.'));
+        return;
+      }
+      const imageUrl = typeof result.url === 'string' ? result.url : result.dataUrl;
+      if (!imageUrl) {
+        reject(new Error('Perchance completed without returning an image URL.'));
+        return;
+      }
+      resolve({ imageUrl, seed: typeof result.seed === 'number' ? result.seed : seed });
+    };
+
+    frame.setAttribute('aria-hidden', 'true');
+    frame.tabIndex = -1;
+    frame.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:0;';
+    window.addEventListener('message', onMessage);
+    frame.src = url;
+    document.body.appendChild(frame);
+  });
+};
+
 export class ImageGeneratorService {
   /**
    * Generates an image using the selected provider and model
@@ -51,6 +179,12 @@ export class ImageGeneratorService {
     } = params;
 
     const actualSeed = seed && seed > 0 ? seed : Math.floor(Math.random() * 99999999);
+
+    // Perchance's supported external API is browser-only: it returns the
+    // result through postMessage from a documented iframe, not server JSON.
+    if (provider === 'perchance') {
+      return generateWithPerchanceOfficialApi(params, actualSeed);
+    }
 
     // 1. Google Gemini Cloud Photorealism Generation
     if (provider === 'gemini') {
@@ -267,6 +401,71 @@ export class ImageGeneratorService {
     const edgeUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${actualSeed}&model=flux-realism&enhance=true&nologo=true${neg}`;
     await this.preloadImage(edgeUrl);
     return { imageUrl: edgeUrl, seed: actualSeed };
+  }
+
+  /**
+   * Generate a provider-backed video. Local image-to-video motion remains in
+   * VideoEngine; this method is for providers with a documented video route.
+   */
+  public static async generateVideo(
+    params: VideoGenerationParams
+  ): Promise<{ videoUrl: string; seed: number; notice?: string }> {
+    const actualSeed = params.seed && params.seed > 0
+      ? params.seed
+      : Math.floor(Math.random() * 99_999_999);
+    const duration = Math.min(Math.max(params.duration || 5, 1), 10);
+
+    if (params.provider === 'pollinations') {
+      const query = new URLSearchParams({
+        model: params.model || 'wan',
+        duration: String(duration),
+        seed: String(actualSeed),
+      });
+      const videoUrl = `https://gen.pollinations.ai/video/${encodeURIComponent(
+        params.prompt.trim()
+      )}?${query.toString()}`;
+      return { videoUrl, seed: actualSeed };
+    }
+
+    if (isServerProxyProvider(params.provider)) {
+      const response = await fetch('/api/providers/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: params.provider,
+          kind: 'video',
+          model: params.model,
+          prompt: params.prompt,
+          negativePrompt: params.negativePrompt || undefined,
+          imageUrl: params.imageUrl || undefined,
+          width: params.width,
+          height: params.height,
+          aspectRatio: params.aspectRatio,
+          seed: actualSeed,
+          duration,
+          credentials: {
+            key: params.providerKeys?.[params.provider] || undefined,
+            accountId: params.providerKeys?.[`${params.provider}.accountId`] || undefined,
+            baseUrl: params.providerBaseUrls?.[params.provider] || undefined,
+          },
+          custom: params.customProvider,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Video provider request failed (${response.status})`);
+      }
+      const videoUrl = Array.isArray(data.mediaUrls) ? data.mediaUrls[0] : '';
+      if (!videoUrl) throw new Error('The video provider returned no media URL.');
+      return {
+        videoUrl,
+        seed: typeof data.seed === 'number' ? data.seed : actualSeed,
+      };
+    }
+
+    throw new Error(
+      `${params.provider} does not have a configured video adapter. Use a supported video provider or the local motion renderer.`
+    );
   }
 
   /**

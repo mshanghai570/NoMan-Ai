@@ -5,14 +5,15 @@ to SpicyChat.
 
 ## The registry
 
-Two files. No new routes, no client branches.
+Server providers use two files and no new routes. Browser-only providers may
+also need one client adapter, as Perchance does.
 
 | File | Responsibility |
 | --- | --- |
 | `src/providers/catalog.ts` | UI metadata: label, credential fields, env var, default base URL, preset models |
 | `src/server/providerAdapters.ts` | Server-side HTTP adapter: auth, submit, poll, extract media URLs |
 | `src/server/apiHandler.ts` | `POST /api/providers/generate`, `GET /api/providers` |
-| `src/services/imageGenerator.ts` | Forwards proxied providers to the API; keeps Pollinations/HF/local in the browser |
+| `src/services/imageGenerator.ts` | Forwards proxied providers to the API and owns browser-only workflows such as Pollinations, Perchance, and HF |
 
 ### Add a provider in two steps
 
@@ -71,7 +72,7 @@ Server env vars (see `.env.example`):
 
 | Provider | Env | Notes |
 | --- | --- | --- |
-| Leonardo.Ai | `LEONARDO_API_KEY` | Also serves Seedream and Seedance models |
+| Leonardo.Ai | `LEONARDO_API_KEY` | Image generation; image-to-video needs a separate documented upload/task workflow |
 | Replicate | `REPLICATE_API_TOKEN` | owner/model slug or a 64-char version hash |
 | BytePlus ModelArk | `BYTEPLUS_API_KEY` | Direct Seedream / Seedance |
 | Cloudflare Workers AI | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Binary image responses are returned as data URLs |
@@ -85,8 +86,10 @@ existing Hugging Face token. Prefer env vars for anything shared.
 
 - **Leonardo** — `POST /api/rest/v2/generations` then poll
   `/api/rest/v1/generations/{id}` until `generations_by_pk.status === "COMPLETE"`.
-  Image URLs live in `generated_images[].url`, video in `motionMP4URL`. One key
-  covers FLUX, Seedream 4.0/4.5, Nano Banana and Seedance.
+  Image URLs live in `generated_images[].url`. The registry currently exposes
+  Leonardo as image-only because its image-to-video flow requires uploading an
+  init image and using a separate task contract; use BytePlus, Replicate, or a
+  custom workflow for video until that flow is implemented.
 - **Replicate** — sends only `prompt` and `aspect_ratio`, because Replicate
   validates each model's input schema and rejects unknown fields. For
   model-specific knobs (steps, guidance, LoRAs) use the **custom JSON endpoint**
@@ -97,12 +100,15 @@ existing Hugging Face token. Prefer env vars for anything shared.
   (`--ratio 16:9 --duration 5`).
 - **Cloudflare Workers AI** — `@cf/black-forest-labs/flux-1-schnell` caps steps
   at 8; the adapter clamps them. Other models use `num_steps`.
-- **Pollinations** — keyless, called directly from the browser, unchanged.
-- **Perchance** — no official public API. It is a browser generator, not an
-  inference endpoint. Options are: (a) run it manually and import the file,
-  (b) put a small proxy in front of it and register that with the custom JSON
-  endpoint, (c) use an OpenAI-compatible relay. The app deliberately does not
-  scrape it.
+- **Pollinations** — direct image/video routes are supported by the client for
+  compatible models. Keyless availability, authentication, model behavior, and
+  provider safety can change; the app does not promise unlimited access.
+- **Perchance** — the official Image API is supported in Image Studio through a
+  hidden browser iframe and `postMessage`; this is intentionally not routed
+  through the server because the published API is browser-oriented. The official
+  Perchance video and roleplay pages currently document browser experiences but
+  not stable external API contracts. Do not scrape their internal calls. Use
+  Custom JSON only with an explicitly permitted Perchance bridge or relay.
 - **Hugging Face** — the existing `/api/hf/generate` path is untouched and still
   falls back to Pollinations if the call fails.
 
@@ -110,8 +116,15 @@ existing Hugging Face token. Prefer env vars for anything shared.
 
 Settings → Generation Providers → Custom JSON endpoint. Fields:
 
+The direct Perchance Image API is not configured here: its supported external
+contract is an iframe that returns through `postMessage`, so Image Studio has a
+dedicated **Perchance Official Image API** provider. Use this form only for a
+Perchance generator or bridge that explicitly documents a normal JSON endpoint
+and permits your application to call it.
+
 - **Body template** — JSON with `{{prompt}}`, `{{negative}}`,
-  `{{width}}`, `{{height}}`, `{{seed}}`, `{{model}}`, `{{aspect_ratio}}`.
+  `{{width}}`, `{{height}}`, `{{duration}}`, `{{seed}}`, `{{model}}`,
+  `{{aspect_ratio}}`.
   String values are JSON-escaped before substitution, so quotes and newlines in
   a prompt cannot break the body.
 - **Extra headers** — JSON object, e.g. `{"X-API-Key":"…"}`.
@@ -133,11 +146,11 @@ resultPath: images.0.url
 
 ## Video
 
-`POST /api/providers/generate` accepts `kind: "video"` and the BytePlus,
-Leonardo and Replicate adapters all support it. The Video Studio still renders
-its motion clips with the local canvas engine; pointing its text-to-video button
-at a cloud model is a UI change, not a new provider. Until that lands, cloud
-video is reachable through the API and the custom endpoint.
+`POST /api/providers/generate` accepts `kind: "video"` for the BytePlus,
+Replicate, and Custom JSON adapters. Pollinations text-to-video uses its direct
+client URL path. Video Studio routes text-to-video through the selected cloud
+adapter; image-to-video and timeline extension remain local canvas workflows
+unless a provider-specific image-input contract is configured.
 
 ## Roleplay: Kilo
 
@@ -150,11 +163,12 @@ Two different things share the Kilo name:
   pasted into a custom persona's `systemPrompt` if you want its flavour.
 - **The Kilo AI Gateway** is a real API:
   `https://ai-gateway.kilo.ai/api/v1`, OpenAI-compatible, `Authorization: Bearer
-  <KILO_API_KEY>`. Model ids ending in `:free` work with no key at 200
-  requests/hour per IP; a key raises that. It ships as a chat provider
-  preset (**Settings → Roleplay Engine → Kilo Gateway**) with the free model ids
-  in `KILO_FREE_MODELS` and the Character / Narrator / DM agent-mode prompts, so
-  its free models can drive roleplay, memory summaries and scene prompts.
+  <KILO_API_KEY>`. Free routes may work without a key but are rate-limited and
+  remain subject to the upstream provider's policy; they are not an uncensored
+  guarantee. It ships as a chat provider preset (**Settings → Roleplay Engine →
+  Kilo Gateway**) with free model ids in `KILO_FREE_MODELS` and the Character /
+  Narrator / DM agent-mode prompts, so the gateway can drive roleplay, memory
+  summaries, and scene prompts.
 
 ## SpicyChat parity
 
